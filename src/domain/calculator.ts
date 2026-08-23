@@ -86,6 +86,16 @@ export interface BudgetReport {
    * possible under the gold limit. Never reported as optimal when unproven.
    */
   provablyOptimal: boolean;
+  /**
+   * The most any cargo could possibly earn under both limits, in tenths.
+   *
+   * Relaxing a constraint can only help, so the best plan that ignores one
+   * limit is a ceiling on the best plan that respects both. When optimality
+   * cannot be proven outright, this bounds how much is being left behind:
+   * a plan within a hair of the ceiling is worth trusting even unproven.
+   * Equal to the trip profit whenever provablyOptimal is true.
+   */
+  upperBoundProfit: Tenths;
 }
 
 export interface RouteSuccess {
@@ -325,8 +335,11 @@ export function planRoute(input: RouteInput): RouteResult {
     byId.set(good.id, { good, buy: buyRow, sell: sellRow });
   }
 
-  let picks = solveBoundedKnapsack(candidates, capacity).picks;
-  let budget: BudgetReport | null = null;
+  const unconstrained = solveBoundedKnapsack(candidates, capacity);
+  let picks = unconstrained.picks;
+  let budgetBinding = false;
+  let budgetProven = false;
+  let budgetBoundScaled = unconstrained.totalValue;
 
   if (hasBudget) {
     const cost = totalCostOf(picks, byId);
@@ -334,15 +347,19 @@ export function planRoute(input: RouteInput): RouteResult {
       // The solved problem ignores the overall gold limit, so its optimum is an
       // upper bound on the limited problem. Coming in under the limit therefore
       // proves this plan is also optimal once the limit is applied.
-      budget = { availableGold, binding: false, provablyOptimal: true };
+      budgetProven = true;
     } else {
-      const constrained = solveWithinBudget(candidates, byId, capacity, availableGold);
-      picks = constrained.picks;
-      budget = {
+      const constrained = solveWithinBudget(
+        candidates,
+        byId,
+        capacity,
         availableGold,
-        binding: true,
-        provablyOptimal: constrained.provablyOptimal,
-      };
+        unconstrained.totalValue,
+      );
+      picks = constrained.picks;
+      budgetBinding = true;
+      budgetProven = constrained.provablyOptimal;
+      budgetBoundScaled = constrained.boundScaled;
     }
   }
 
@@ -400,6 +417,20 @@ export function planRoute(input: RouteInput): RouteResult {
 
   // The docking fee is charged once per trip, not per unit (5.3).
   const tripProfit = netTotal - dockingFee;
+
+  // The ceiling is in the optimiser's scaled units and ignores the per-good tax
+  // rounding, which only ever reduces profit. Flooring and subtracting the trip
+  // fee keeps it a genuine ceiling on what could actually be earned.
+  const budget: BudgetReport | null = hasBudget
+    ? {
+        availableGold,
+        binding: budgetBinding,
+        provablyOptimal: budgetProven,
+        upperBoundProfit: budgetProven
+          ? tripProfit
+          : Math.max(tripProfit, Math.floor(budgetBoundScaled / 10_000) - dockingFee),
+      }
+    : null;
 
   const notes: string[] = [SPEED_CAVEAT, LOAD_CAVEAT];
   if (taxUnknown) {
@@ -514,7 +545,8 @@ function solveWithinBudget(
   index: CandidateIndex,
   capacity: number,
   availableGold: Tenths,
-): { picks: { id: string; quantity: number }[]; provablyOptimal: boolean } {
+  weightRelaxedValue: number,
+): { picks: { id: string; quantity: number }[]; provablyOptimal: boolean; boundScaled: number } {
   const priced = candidates.map((item) => ({
     item,
     unitCost: index.get(item.id)!.buy.buyPrice as number,
@@ -535,7 +567,10 @@ function solveWithinBudget(
   };
 
   const feasible: BudgetCandidate[] = [];
-  let proven = false;
+
+  // Ignoring the gold limit entirely is the other relaxation, and its optimum
+  // is the starting ceiling.
+  let boundScaled = weightRelaxedValue;
 
   // --- Relaxation: ignore the hold, spend gold optimally -------------------
   // Costs are quantised upward when the budget is large, which keeps the table
@@ -553,20 +588,27 @@ function solveWithinBudget(
     });
   }
   if (costItems.length > 0) {
-    const byCost = measure(
-      solveBoundedKnapsack(costItems, Math.floor(availableGold / granularity)).picks,
-    );
+    const solved = solveBoundedKnapsack(costItems, Math.floor(availableGold / granularity));
+    const byCost = measure(solved.picks);
+
+    // Only a valid ceiling when nothing was quantised. Rounding costs UP
+    // shrinks the feasible set, so the answer would be a floor, not a ceiling,
+    // and using it as a bound could understate what is achievable.
+    if (granularity === 1) {
+      boundScaled = Math.min(boundScaled, solved.totalValue);
+    }
+
     if (byCost.cost <= availableGold && byCost.weight <= capacity) {
       feasible.push(byCost);
-      // Exact only when nothing was quantised away.
-      if (granularity === 1) proven = true;
     }
   }
 
   // --- Lagrangian search --------------------------------------------------
   // Price the gold limit into the objective and raise that price until the
-  // plan becomes affordable.
-  if (!proven) {
+  // plan becomes affordable. Skipped only when a candidate already matches the
+  // ceiling, since nothing can beat that.
+  const alreadyAtCeiling = feasible.some((c) => c.value >= boundScaled);
+  if (!alreadyAtCeiling) {
     const DENOMINATOR = 1024;
     const forSearch = priced.map((p) => ({
       ...p,
@@ -626,10 +668,15 @@ function solveWithinBudget(
   const all = [...feasible, ...repaired].filter(
     (c) => c.cost <= availableGold && c.weight <= capacity,
   );
-  if (all.length === 0) return { picks: [], provablyOptimal: false };
+  if (all.length === 0) return { picks: [], provablyOptimal: false, boundScaled };
 
   const winner = all.reduce((a, b) => (b.value > a.value ? b : a));
-  return { picks: winner.picks, provablyOptimal: proven };
+  return {
+    picks: winner.picks,
+    // Matching the ceiling is a proof: nothing better can exist.
+    provablyOptimal: winner.value >= boundScaled,
+    boundScaled,
+  };
 }
 
 /**

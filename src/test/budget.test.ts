@@ -82,6 +82,8 @@ describe('the gold limit', () => {
       // Ignoring the limit gives an upper bound, so coming in under it proves
       // this plan is also the best once the limit applies.
       provablyOptimal: true,
+      // Proven optimal, so the ceiling is simply what the plan earns.
+      upperBoundProfit: result.tripProfit,
     });
   });
 
@@ -159,6 +161,37 @@ describe('against brute force, on many random cases', () => {
     for (const { result, best } of outcomes) {
       expect(result.tripProfit).toBeLessThanOrEqual(best);
     }
+  });
+
+  test('the upper bound is a real ceiling, never below what is achievable', () => {
+    // The bound is what lets the UI say "within X of the best possible" when
+    // optimality cannot be proven. A bound below the true optimum would be a
+    // lie in the reassuring direction, which is the worst kind.
+    for (const { result, best } of outcomes) {
+      if (!result.budget) continue;
+      expect(result.budget.upperBoundProfit).toBeGreaterThanOrEqual(best);
+      expect(result.budget.upperBoundProfit).toBeGreaterThanOrEqual(result.tripProfit);
+    }
+  });
+
+  test('a proven plan reports a ceiling equal to its own profit', () => {
+    for (const { result } of outcomes) {
+      if (result.budget?.provablyOptimal) {
+        expect(result.budget.upperBoundProfit).toBe(result.tripProfit);
+      }
+    }
+  });
+
+  test('the ceiling is tight enough to be worth showing', () => {
+    // A bound so loose it says "somewhere between 100 and 10000" helps nobody.
+    const unproven = binding.filter((o) => !o.result.budget?.provablyOptimal);
+    if (unproven.length === 0) return;
+    const gaps = unproven.map((o) => {
+      const bound = o.result.budget!.upperBoundProfit;
+      return bound > 0 ? (bound - o.result.tripProfit) / bound : 0;
+    });
+    const worst = Math.max(...gaps);
+    expect(worst).toBeLessThan(0.5);
   });
 
   test('finds the true optimum in the large majority of binding cases', () => {
