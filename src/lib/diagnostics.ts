@@ -46,32 +46,48 @@ async function countRows(
 }
 
 /**
- * Confirms no server-only secret was bundled into the browser.
+ * Catches a secret that has been given a VITE_ prefix by mistake.
  *
- * A key without the VITE_ prefix should be invisible here. If one shows up,
- * it has leaked to every visitor and must be rotated, not just deleted --
- * removing the line does not remove it from git history.
+ * Being precise about what this can and cannot see: Vite replaces
+ * import.meta.env at build time with the VITE_ prefixed variables and its own
+ * handful, and nothing else. A genuinely server-only name can therefore never
+ * appear here — which also means it cannot have leaked, so there is nothing
+ * to catch. Scanning for those names would be theatre, and worse, it reports
+ * a leak wherever the surrounding process happens to have such a variable set.
+ *
+ * The failure that does happen is somebody adding VITE_ANTHROPIC_API_KEY,
+ * reasoning that the app needs it. That prefix is precisely what publishes a
+ * value to every visitor, and it is what this looks for.
+ *
+ * The complementary check lives in the test suite, which reads the source
+ * rather than the runtime and fails the build if client code so much as names
+ * a server-only variable.
  */
 function checkNoSecretsInBundle(): Check {
   const env = import.meta.env as Record<string, unknown>;
-  const leaked = Object.keys(env).filter((key) =>
-    /SERVICE_ROLE|ANTHROPIC|SECRET|PASSWORD/i.test(key),
+  const published = Object.keys(env).filter(
+    (key) =>
+      key.startsWith('VITE_') &&
+      // VITE_SUPABASE_ANON_KEY is safe by design, so match on what a secret is
+      // called rather than on the word "key".
+      /SERVICE_ROLE|ANTHROPIC|SECRET|PASSWORD|PRIVATE/i.test(key),
   );
 
-  return leaked.length === 0
+  return published.length === 0
     ? {
         id: 'secrets',
-        label: 'No server-only keys in the browser bundle',
+        label: 'No secrets published to the browser',
         status: 'pass',
-        detail: 'Only the two VITE_ variables are present, which is correct.',
+        detail: 'No VITE_ variable is named like a secret.',
       }
     : {
         id: 'secrets',
-        label: 'No server-only keys in the browser bundle',
+        label: 'No secrets published to the browser',
         status: 'fail',
         detail:
-          `LEAKED: ${leaked.join(', ')}. Remove the VITE_ prefix in Vercel and ` +
-          'ROTATE the key — deleting it does not remove it from git history.',
+          `PUBLISHED TO EVERY VISITOR: ${published.join(', ')}. The VITE_ prefix is ` +
+          'what does that. Remove the prefix in Vercel and ROTATE the key — ' +
+          'deleting it does not remove it from git history.',
       };
 }
 

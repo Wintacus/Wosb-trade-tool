@@ -69,7 +69,12 @@ create table if not exists goods (
   max_price     integer,
   is_trade_good boolean not null,
   perishable    boolean not null default false,
-  category      text
+  category      text,
+  -- A weightless good would let an unlimited quantity into any hold.
+  constraint goods_weight_positive check (weight > 0),
+  constraint goods_base_nonneg     check (base_value is null or base_value >= 0),
+  constraint goods_min_nonneg      check (min_price  is null or min_price  >= 0),
+  constraint goods_max_nonneg      check (max_price  is null or max_price  >= 0)
 );
 
 create table if not exists ships (
@@ -85,7 +90,9 @@ create table if not exists ships (
   hold            integer not null,
   crew            integer,
   upgrade_slots   integer,
-  verified        boolean not null default true
+  verified        boolean not null default true,
+  constraint ships_rate_range    check (rate >= 1 and rate <= 7),
+  constraint ships_hold_positive check (hold > 0)
 );
 
 create table if not exists upgrades (
@@ -141,7 +148,11 @@ create table if not exists port_state_submissions (
   is_demo             boolean not null default false,
   observed_at         timestamptz not null default now(),
   flagged             boolean not null default false,
-  flag_reason         text
+  flag_reason         text,
+  constraint port_tax_range      check (tax_percent is null or (tax_percent >= 0 and tax_percent <= 100)),
+  constraint port_fee_nonneg     check (docking_fee is null or docking_fee >= 0),
+  constraint port_min_rate_range check (min_ship_rate is null or (min_ship_rate >= 1 and min_ship_rate <= 7)),
+  constraint port_level_nonneg   check (port_level is null or port_level >= 0)
 );
 
 create index if not exists port_state_lookup_idx
@@ -222,7 +233,12 @@ create table if not exists price_submissions (
   is_demo      boolean not null default false,
   observed_at  timestamptz not null default now(),
   flagged      boolean not null default false,
-  flag_reason  text
+  flag_reason  text,
+  -- Money and quantities can be unknown, but never negative. A negative buy
+  -- price would read as free money to the profit arithmetic.
+  constraint price_buy_nonneg   check (buy_price  is null or buy_price  >= 0),
+  constraint price_sell_nonneg  check (sell_price is null or sell_price >= 0),
+  constraint price_stock_nonneg check (stock      is null or stock      >= 0)
 );
 
 create index if not exists price_submissions_lookup_idx
@@ -353,7 +369,21 @@ begin
 end $grant$;
 
 alter table schema_migrations enable row level security;
--- No policies: unreachable through the API by anyone but the service role.
+-- No policies, so nothing reachable from a browser sees it. The service role
+-- bypasses row-level security, but bypassing RLS is not the same as having a
+-- table grant, and both gates have to be open.
+--
+-- Supabase's default privileges would probably cover this on their own. This
+-- schema revokes and re-grants everything else explicitly rather than trusting
+-- those defaults, and leaving one table to luck is how a feature works in
+-- testing and fails the first time it matters.
+do $sm_grant$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant select, insert, update, delete on schema_migrations to service_role';
+    execute 'grant usage, select on all sequences in schema public to service_role';
+  end if;
+end $sm_grant$;
 
 -- =====================================================================
 -- Row level security
@@ -600,3 +630,19 @@ grant usage, select on all sequences in schema public to authenticated;
 
 -- admins is reachable by nobody but the service role and the SQL Editor.
 revoke all on admins from anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- Tell PostgREST to reload.
+--
+-- It caches the database's shape, so a function created a moment ago is
+-- invisible to the REST API until it refreshes -- which would make the first
+-- automatic update fail with a baffling 404. Supabase reloads on DDL by
+-- itself, but saying so explicitly costs nothing and removes the race.
+-- ---------------------------------------------------------------------
+do $reload$
+begin
+  notify pgrst, 'reload schema';
+exception when others then
+  -- Not running under PostgREST (a plain Postgres, or a test). Nothing to do.
+  null;
+end $reload$;
