@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE, verified live, and audited
+Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE, verified live, audited and mutation-tested
 
 ## Done
 
@@ -15,6 +15,22 @@ Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE, verified live, and au
       bounded knapsack, four metrics, return leg, optional gold limit.
 - [x] **Phase 1 — tests** — all eleven from SPEC.md §5.9, plus RLS verification, secret-leak
       guards and an end-to-end run. 121 assertions, all passing.
+
+## Mutation tested
+
+Twenty-nine deliberate sabotages were run against the committed code to see which
+ones the tests would notice. Twenty-five were caught. Of the four survivors, two were
+not real defects (the tests were right to stay green) and two were genuine blind spots,
+now closed. The exercise also turned up a real bug: an absent database column became the
+literal string "undefined" rather than null, which would have shown as a port's
+controlling faction.
+
+**Two lessons worth keeping:**
+- A rising total test count does not mean a test was added. An edit silently failed to
+  apply and the count went up anyway, because of other files. Verify the count in the
+  file you touched.
+- Prefer a real Postgres over a mock wherever the thing being tested is what the
+  database will accept. A mocked fetch answers 200 to a request the database refuses.
 
 ## Audited
 
