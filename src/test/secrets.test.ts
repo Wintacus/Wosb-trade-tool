@@ -75,6 +75,20 @@ describe('client code cannot read server-only secrets', () => {
     expect(offenders).toEqual([]);
   });
 
+  test('client code never imports server code from api/', () => {
+    // api/ reads DATABASE_URL and ADMIN_TOKEN and pulls in the Postgres
+    // driver. A single import of it from src/ would drag all of that into the
+    // browser bundle, so the boundary is checked rather than trusted.
+    const offenders: string[] = [];
+    for (const file of clientFiles) {
+      const source = readFileSync(file, 'utf8');
+      if (/from\s+['"][^'"]*\/api\/|from\s+['"]\.\.\/\.\.\/api/.test(source)) {
+        offenders.push(relative(repoRoot, file));
+      }
+    }
+    expect(offenders, 'these would bundle server-only code into the browser').toEqual([]);
+  });
+
   test('no .env file is tracked, and .gitignore excludes it from the first commit', () => {
     const gitignore = readFileSync(join(repoRoot, '.gitignore'), 'utf8');
     expect(gitignore).toMatch(/^\.env$/m);

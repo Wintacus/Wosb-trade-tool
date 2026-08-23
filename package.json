@@ -10,10 +10,11 @@
     "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:sql": "node scripts/gen-sql.mjs && node scripts/gen-demo-sql.mjs"
+    "gen:sql": "node scripts/gen-sql.mjs && node scripts/gen-demo-sql.mjs && node scripts/gen-embedded-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
+    "pg": "^8.23.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -21,6 +22,7 @@
     "@electric-sql/pglite": "^0.5.6",
     "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",

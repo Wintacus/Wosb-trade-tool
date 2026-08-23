@@ -18,16 +18,14 @@ Last updated: 2026-08-23 — Phase 0 and Phase 1 complete, on branch `claude/pha
 
 ## Waiting on the user
 
-**The SQL has not been run against the real Supabase project yet.** Claude sessions have no
-Supabase credentials, so this is the one step that cannot be done from here. In the Supabase
-dashboard → SQL Editor, run in order:
+**One-time setup only: two env vars in Vercel, then everything is automated.**
 
-1. `supabase/schema.sql`
-2. `supabase/seed.sql`
-3. `supabase/demo_prices.sql` (optional)
+`/api/migrate` applies schema, seed and demo data and verifies the result, so schema changes
+never need pasting again. It needs `DATABASE_URL` (Supabase connection string) and
+`ADMIN_TOKEN` set in Vercel. Once they exist, tapping the endpoint does the whole job, and
+future schema work is just a push.
 
-Then open `wosb-trade-tool.vercel.app` — the page runs the Phase 1 checks live and will show
-green or tell you exactly what is missing.
+Do NOT go back to handing the user SQL to paste. See "Do the work yourself" in CLAUDE.md.
 
 ## Next (Phase 2 — Core UI)
 
@@ -56,14 +54,17 @@ Do not start until the checks on the live URL are green.
   locally. Everything is verified at the live Vercel URL or in the GitHub Actions tab.
 - Claude sessions have **no Supabase credentials**. Do not try to connect. Schema changes ship
   as SQL files for the user to run.
-- `supabase/seed.sql` and `supabase/demo_prices.sql` are **generated**. Edit
-  `scripts/gen-sql.mjs` / `scripts/gen-demo-sql.mjs` and run `npm run gen:sql`. A test fails
-  if the committed SQL drifts from its generator.
+- `supabase/seed.sql`, `supabase/demo_prices.sql` and `api/_sql.ts` are **generated**. Edit
+  `scripts/gen-*.mjs` and run `npm run gen:sql`. Tests fail if any of them drifts.
+- `api/` is server-only: it reads `DATABASE_URL` and `ADMIN_TOKEN` and pulls in the Postgres
+  driver. A test fails if anything under `src/` imports it, which would bundle all of that
+  into the browser.
 - Tests run the **real** `schema.sql` inside PGlite (Postgres compiled to WebAssembly), so a
   broken SQL file fails CI rather than surprising the user in the dashboard.
-- **One deliberate deviation from SPEC.md §3.2**, commented in `schema.sql`: `port_state`
-  allows authenticated UPDATE, not insert-only. It holds one row per (port, server) and ships
-  as all-nulls, so insert-only would let the first person to touch a port fix its tax forever.
+- **There is no longer any deviation from SPEC.md §3.2.** `port_state_submissions` is
+  append-only like `price_submissions`, and `port_state_current` resolves each field
+  independently so correcting a port's tax cannot erase its shallow-water limit. Demo port
+  rows carry `is_demo` and are displaced by the first real observation.
 - **Reference price bands are stored in tenths of gold**, converted from the whole gold in
   `goods.json`, so they compare like-for-like against submitted prices.
 - The gold-limited cargo solver is exact when it can prove it and says so via

@@ -17,6 +17,27 @@ For any **game design or product decision** — mechanics, UI structure, scope, 
 
 For **implementation details** — file layout, variable naming, which library — just decide and move on.
 
+## Do the work yourself
+
+**The only thing to ask of the user is a decision. Never a task.**
+
+If something needs doing, find a way to do it. "I can't, so you do it" is not an
+answer — it is the problem to solve. Before handing over any step, exhaust the
+alternatives: build a serverless endpoint, write a script, automate it, restructure
+so the step disappears. Manual steps for the user are a last resort, and each one
+needs a reason why automation was genuinely impossible, not merely more work.
+
+When a one-time setup unavoidably needs a human — a secret only they can see, a
+console only they can log into — make it **one action, once**, and make every future
+occurrence automatic. Supply every link needed, pre-filled, in the message.
+
+Two consequences worth stating outright:
+
+- **Wait for an explicit go-ahead after asking anything.** Do not ask a question and
+  carry on working. Stop, and stay stopped until they answer.
+- **Never send them looking for something.** No "go find X in the dashboard" without
+  a direct link to exactly that screen.
+
 ---
 
 ## Hard rules
