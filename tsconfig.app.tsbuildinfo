@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/domain/geo.ts","./src/domain/knapsack.ts","./src/domain/money.ts","./src/domain/ships.ts","./src/domain/types.ts"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/main.tsx","./src/domain/calculator.ts","./src/domain/geo.ts","./src/domain/knapsack.ts","./src/domain/money.ts","./src/domain/ships.ts","./src/domain/types.ts"],"version":"5.9.3"}
