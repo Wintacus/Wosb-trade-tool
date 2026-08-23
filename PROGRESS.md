@@ -101,7 +101,10 @@ Phase 1 is done, so Phase 2 may begin.
   plan as optimal.
 - Both once-open questions are settled: the append-only `port_state` redesign is approved
   and merged, and the migration function is wired up.
-- **The one remaining user step:** open `/api/migrate` once and enter the database password.
-  That installs `apply_migration`. After that no schema change ever needs a password again.
+- **The one remaining user step, ever:** open `/api/migrate` once and enter the database
+  password. That installs `apply_migration`, which cannot be created any other way — no
+  credential except the database password can run DDL. After that, schema changes apply
+  during the Vercel build automatically: push and the database follows. Do not ask the user
+  to tap anything for a schema change.
 - The knapsack was measured at 71ms for the largest hold in the game with all 61 goods, so
   SPEC.md's claim that it runs comfortably in a browser holds.
