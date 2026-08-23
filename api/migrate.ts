@@ -109,6 +109,19 @@ interface Attempt {
   error: string;
 }
 
+/**
+ * Whether demo prices were asked for.
+ *
+ * An unchecked HTML checkbox sends NOTHING, so absence has to mean off.
+ * Testing for "not false" would load demo data even when the box was unticked,
+ * which is the kind of silent wrong default that makes people distrust every
+ * number on the screen.
+ */
+export function wantsDemo(body: Record<string, unknown>): boolean {
+  const value = body.demo;
+  return value === true || value === 'true' || value === 'on';
+}
+
 /** True when the server answered but rejected us, so trying elsewhere is pointless. */
 export function isAuthFailure(message: string): boolean {
   return /password authentication failed|role .* does not exist|Tenant or user not found/i.test(
@@ -174,7 +187,7 @@ export default async function handler(req: Req, res: Res): Promise<void> {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const password = typeof body.password === 'string' ? body.password.trim() : '';
   const override = typeof body.connectionString === 'string' ? body.connectionString.trim() : '';
-  const withDemo = body.demo !== false && body.demo !== 'false';
+  const withDemo = wantsDemo(body);
 
   if (!password && !override) {
     res.status(400).json({ ok: false, error: 'No password supplied.' });

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import handler, { candidateConnections, isAuthFailure, projectRef } from '../../api/migrate';
+import handler, {
+  candidateConnections,
+  isAuthFailure,
+  projectRef,
+  wantsDemo,
+} from '../../api/migrate';
 import { setupPage, resultPage } from '../../api/_page';
 
 /**
@@ -181,6 +186,27 @@ describe('POST validates before touching anything', () => {
     expect(captured.code).toBe(500);
     expect(String((captured.json as { error: string }).error)).toMatch(/VITE_SUPABASE_URL/);
   });
+});
+
+describe('the demo checkbox is honoured', () => {
+  // An unchecked HTML checkbox is simply absent from the body. Reading that as
+  // "not explicitly false, so on" would load demo data against the user's
+  // wishes, which is the kind of silent wrong default that erodes trust in
+  // every number on screen.
+  const cases: [Record<string, unknown>, boolean, string][] = [
+    [{}, false, 'absent means unticked'],
+    [{ demo: 'on' }, true, 'a ticked box sends "on"'],
+    [{ demo: 'true' }, true, 'or "true"'],
+    [{ demo: true }, true, 'or a real boolean from a JSON client'],
+    [{ demo: 'false' }, false, 'an explicit false stays off'],
+    [{ demo: false }, false, 'as does a real false'],
+  ];
+
+  for (const [body, expected, why] of cases) {
+    test(why, () => {
+      expect(wantsDemo(body)).toBe(expected);
+    });
+  }
 });
 
 describe('the pages render safely', () => {
