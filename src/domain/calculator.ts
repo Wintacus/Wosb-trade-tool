@@ -484,17 +484,30 @@ function totalCostOf(
   return cost;
 }
 
+/** Largest cost-axis table this is willing to build, to bound memory use. */
+const MAX_COST_CELLS = 150_000;
+
+interface BudgetCandidate {
+  picks: { id: string; quantity: number }[];
+  value: number;
+  cost: Tenths;
+  weight: number;
+}
+
 /**
  * Cargo plan for when the gold limit actually bites.
  *
- * Two constraints at once, hold weight and gold, make an exact table
- * impractical at this scale: the grid would run to billions of cells. Instead
- * the gold limit is priced into the objective and that price is raised until
- * the plan becomes affordable, which is the standard Lagrangian approach.
+ * Two constraints at once, hold weight and gold, put an exact table out of
+ * reach: at a 54,000 hold and a real bankroll the grid runs to billions of
+ * cells. What works instead is to solve each constraint exactly on its own and
+ * look for a certificate.
  *
- * The result is always affordable. It is reported as provably optimal only when
- * it spends the budget exactly; otherwise provablyOptimal is false and the
- * caller is expected to say so rather than imply certainty.
+ * Relaxing a constraint can only ever help, so a relaxed optimum is an upper
+ * bound on the real one. That gives a free proof: if the plan that ignores
+ * weight happens to fit the hold anyway, no better plan can exist, and the
+ * same in reverse. When neither certificate fires, both constraints genuinely
+ * bind and the answer is the best of several feasible candidates, reported
+ * honestly as unproven rather than dressed up as optimal.
  */
 function solveWithinBudget(
   candidates: readonly KnapsackItem[],
@@ -502,57 +515,235 @@ function solveWithinBudget(
   capacity: number,
   availableGold: Tenths,
 ): { picks: { id: string; quantity: number }[]; provablyOptimal: boolean } {
-  const DENOMINATOR = 1024;
+  const priced = candidates.map((item) => ({
+    item,
+    unitCost: index.get(item.id)!.buy.buyPrice as number,
+  }));
+  const costOf = new Map(priced.map((p) => [p.item.id, p.unitCost]));
 
-  // Search in whole tenths so the penalised objective stays well inside exact
-  // integer range. Final money is always recomputed from the chosen
-  // quantities, never read back out of these search values.
-  const priced = candidates.map((item) => {
-    const entry = index.get(item.id)!;
-    return {
-      item,
-      profitTenths: Math.round(item.value / 10_000),
-      unitCost: entry.buy.buyPrice as number,
+  const measure = (picks: { id: string; quantity: number }[]): BudgetCandidate => {
+    let value = 0;
+    let cost = 0;
+    let weight = 0;
+    for (const pick of picks) {
+      const item = candidates.find((c) => c.id === pick.id)!;
+      value += item.value * pick.quantity;
+      cost += (costOf.get(pick.id) ?? 0) * pick.quantity;
+      weight += item.weight * pick.quantity;
+    }
+    return { picks, value, cost, weight };
+  };
+
+  const feasible: BudgetCandidate[] = [];
+  let proven = false;
+
+  // --- Relaxation: ignore the hold, spend gold optimally -------------------
+  // Costs are quantised upward when the budget is large, which keeps the table
+  // bounded and can only ever make a plan cheaper than it is allowed to be, so
+  // the result is always affordable.
+  const granularity = Math.max(1, Math.ceil(availableGold / MAX_COST_CELLS));
+  const costItems: KnapsackItem[] = [];
+  for (const { item, unitCost } of priced) {
+    if (unitCost <= 0) continue;
+    costItems.push({
+      id: item.id,
+      weight: Math.ceil(unitCost / granularity),
+      value: item.value,
+      maxQuantity: item.maxQuantity,
+    });
+  }
+  if (costItems.length > 0) {
+    const byCost = measure(
+      solveBoundedKnapsack(costItems, Math.floor(availableGold / granularity)).picks,
+    );
+    if (byCost.cost <= availableGold && byCost.weight <= capacity) {
+      feasible.push(byCost);
+      // Exact only when nothing was quantised away.
+      if (granularity === 1) proven = true;
+    }
+  }
+
+  // --- Lagrangian search --------------------------------------------------
+  // Price the gold limit into the objective and raise that price until the
+  // plan becomes affordable.
+  if (!proven) {
+    const DENOMINATOR = 1024;
+    const forSearch = priced.map((p) => ({
+      ...p,
+      // Search in whole tenths so the penalised objective stays well inside
+      // exact-integer range. Money is always recomputed from the quantities.
+      profitTenths: Math.round(p.item.value / 10_000),
+    }));
+
+    const solveAt = (penalty: number) => {
+      const adjusted: KnapsackItem[] = [];
+      for (const p of forSearch) {
+        const value = p.profitTenths * DENOMINATOR - penalty * p.unitCost;
+        if (value > 0) adjusted.push({ ...p.item, value });
+      }
+      return measure(solveBoundedKnapsack(adjusted, capacity).picks);
     };
+
+    let maxRatio = 0;
+    for (const p of forSearch) {
+      if (p.unitCost > 0) maxRatio = Math.max(maxRatio, p.profitTenths / p.unitCost);
+    }
+
+    let low = 0; // overspends
+    let high = Math.ceil((maxRatio + 1) * DENOMINATOR); // prices everything out
+    let best = solveAt(high);
+    // The richest plan seen that was just out of reach. Trimming it back is
+    // often better than the first plan that happened to come in under budget.
+    let overspent: BudgetCandidate | null = null;
+
+    for (let i = 0; i < 40 && low + 1 < high; i++) {
+      const mid = Math.floor((low + high) / 2);
+      const attempt = solveAt(mid);
+      if (attempt.cost <= availableGold) {
+        high = mid;
+        best = attempt;
+      } else {
+        low = mid;
+        overspent = attempt;
+      }
+    }
+
+    if (best.cost <= availableGold) feasible.push(best);
+    if (overspent) {
+      const trimmed = stripDown(overspent, candidates, costOf, capacity, availableGold);
+      if (trimmed.cost <= availableGold && trimmed.weight <= capacity) feasible.push(trimmed);
+    }
+  }
+
+  // --- Repair -------------------------------------------------------------
+  // A relaxed solve often leaves room in whichever constraint it ignored.
+  // Topping the cargo up can only improve a plan, never break it.
+  const repaired = feasible.flatMap((candidate) => [
+    topUp(candidate, candidates, costOf, capacity, availableGold, 'cost'),
+    topUp(candidate, candidates, costOf, capacity, availableGold, 'weight'),
+  ]);
+
+  const all = [...feasible, ...repaired].filter(
+    (c) => c.cost <= availableGold && c.weight <= capacity,
+  );
+  if (all.length === 0) return { picks: [], provablyOptimal: false };
+
+  const winner = all.reduce((a, b) => (b.value > a.value ? b : a));
+  return { picks: winner.picks, provablyOptimal: proven };
+}
+
+/**
+ * Cut a plan back until it is affordable and fits, dropping the cargo that
+ * earns least per gold spent first.
+ *
+ * The plan handed in comes from a search that overspent, which means it is
+ * richer than anything already within budget. Trimming the worst of it often
+ * beats the first plan that happened to come in under the limit.
+ */
+function stripDown(
+  candidate: BudgetCandidate,
+  items: readonly KnapsackItem[],
+  costOf: ReadonlyMap<string, number>,
+  capacity: number,
+  availableGold: Tenths,
+): BudgetCandidate {
+  const quantities = new Map(candidate.picks.map((p) => [p.id, p.quantity]));
+  let cost = candidate.cost;
+  let weight = candidate.weight;
+
+  // Worst value for money first.
+  const order = [...items].sort(
+    (a, b) => a.value / (costOf.get(a.id) || 1) - b.value / (costOf.get(b.id) || 1),
+  );
+
+  for (const item of order) {
+    if (cost <= availableGold && weight <= capacity) break;
+    const held = quantities.get(item.id) ?? 0;
+    if (held <= 0) continue;
+
+    const unitCost = costOf.get(item.id) ?? 0;
+    const dropForGold = unitCost > 0 ? Math.ceil((cost - availableGold) / unitCost) : 0;
+    const dropForSpace = Math.ceil((weight - capacity) / item.weight);
+    const drop = Math.min(held, Math.max(dropForGold, dropForSpace, 0));
+    if (drop <= 0) continue;
+
+    quantities.set(item.id, held - drop);
+    cost -= drop * unitCost;
+    weight -= drop * item.weight;
+  }
+
+  return rebuild(quantities, items, costOf);
+}
+
+/**
+ * Add whatever else still fits in both the hold and the remaining gold.
+ *
+ * `by` chooses which resource to be greedy about: profit per unit of gold when
+ * gold is the tight one, profit per unit of weight when the hold is.
+ */
+function topUp(
+  candidate: BudgetCandidate,
+  items: readonly KnapsackItem[],
+  costOf: ReadonlyMap<string, number>,
+  capacity: number,
+  availableGold: Tenths,
+  by: 'cost' | 'weight',
+): BudgetCandidate {
+  const quantities = new Map(candidate.picks.map((p) => [p.id, p.quantity]));
+  let remainingWeight = capacity - candidate.weight;
+  let remainingGold = availableGold - candidate.cost;
+
+  const order = [...items].sort((a, b) => {
+    const aCost = costOf.get(a.id) ?? 1;
+    const bCost = costOf.get(b.id) ?? 1;
+    const aRatio = by === 'cost' ? a.value / aCost : a.value / a.weight;
+    const bRatio = by === 'cost' ? b.value / bCost : b.value / b.weight;
+    return bRatio - aRatio;
   });
 
-  const solveAt = (penaltyNumerator: number) => {
-    const adjusted: KnapsackItem[] = [];
-    for (const p of priced) {
-      const value = p.profitTenths * DENOMINATOR - penaltyNumerator * p.unitCost;
-      if (value > 0) adjusted.push({ ...p.item, value });
-    }
-    const picks = solveBoundedKnapsack(adjusted, capacity).picks;
-    return { picks, cost: totalCostOf(picks, index) };
-  };
+  for (const item of order) {
+    const unitCost = costOf.get(item.id) ?? 0;
+    const already = quantities.get(item.id) ?? 0;
+    const room = item.maxQuantity - already;
+    if (room <= 0) continue;
 
-  let maxRatio = 0;
-  for (const p of priced) {
-    if (p.unitCost > 0) maxRatio = Math.max(maxRatio, p.profitTenths / p.unitCost);
+    const extra = Math.min(
+      room,
+      Math.floor(remainingWeight / item.weight),
+      unitCost > 0 ? Math.floor(remainingGold / unitCost) : room,
+    );
+    if (extra <= 0) continue;
+
+    quantities.set(item.id, already + extra);
+    remainingWeight -= extra * item.weight;
+    remainingGold -= extra * unitCost;
   }
 
-  let low = 0; // known to overspend
-  let high = Math.ceil((maxRatio + 1) * DENOMINATOR); // prices every good out
-  let best = solveAt(high);
+  return rebuild(quantities, items, costOf);
+}
 
-  // Invariant: `high` always yields an affordable plan. Narrow it towards `low`.
-  for (let i = 0; i < 40 && low + 1 < high; i++) {
-    const mid = Math.floor((low + high) / 2);
-    const attempt = solveAt(mid);
-    if (attempt.cost <= availableGold) {
-      high = mid;
-      best = attempt;
-    } else {
-      low = mid;
-    }
+/** Turn a quantity map back into a candidate with its totals recomputed. */
+function rebuild(
+  quantities: ReadonlyMap<string, number>,
+  items: readonly KnapsackItem[],
+  costOf: ReadonlyMap<string, number>,
+): BudgetCandidate {
+  let value = 0;
+  let cost = 0;
+  let weight = 0;
+  const picks: { id: string; quantity: number }[] = [];
+
+  for (const [id, quantity] of quantities) {
+    if (quantity <= 0) continue;
+    const item = items.find((i) => i.id === id);
+    if (!item) continue;
+    picks.push({ id, quantity });
+    value += item.value * quantity;
+    cost += (costOf.get(id) ?? 0) * quantity;
+    weight += item.weight * quantity;
   }
 
-  return {
-    picks: best.picks,
-    // Spending the budget exactly means no gold sat idle, which is the only
-    // cheap optimality certificate available here. Anything else stays unproven.
-    provablyOptimal: best.cost === availableGold,
-  };
+  return { picks, value, cost, weight };
 }
 
 export interface TripPlan {

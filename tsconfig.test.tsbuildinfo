@@ -1,1 +1,1 @@
-{"root":["./src/test/calculator.test.ts","./src/test/fixtures.ts","./src/test/pg.ts","./src/test/prices-current.test.ts","./src/test/rls.test.ts","./src/test/secrets.test.ts","./src/test/seed-data.test.ts","./src/test/ships.test.ts"],"version":"5.9.3"}
+{"root":["./src/test/budget.test.ts","./src/test/calculator.test.ts","./src/test/fixtures.ts","./src/test/pg.ts","./src/test/prices-current.test.ts","./src/test/rls.test.ts","./src/test/secrets.test.ts","./src/test/seed-data.test.ts","./src/test/ships.test.ts"],"version":"5.9.3"}
