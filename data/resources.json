@@ -1,0 +1,390 @@
+{
+  "_meta": {
+    "description": "Craft materials, currencies and special items. Distinct from the 20 trade goods but heavily traded in bulk (copper, resin, iron, coal etc). The calculator must treat these as tradeable cargo alongside trade goods.",
+    "source": "theirontide.org wiki resource table (stated to be extracted from decompiled game code).",
+    "confidence": "HIGH for weights and base values. Copper independently confirmed by in-game tooltip (Weight 10, Value 30).",
+    "keyDifference": "Craft materials DO show a true buy/sell spread in the port Trading House, unlike trade goods. Observed example at Fiji Bay: Wood 4.2 buy / 3.9 sell, Rum 14.1/13.2, Resin 46/43, Copper 22/18.9, Water 2.1/0.9. Prices are quantity-dependent ('Resource exchange (prices depend on quantity)').",
+    "weightWarning": "Weight varies enormously here - Fabric is 1, Bulkhead is 210. This dominates cargo optimisation and is exactly why the knapsack solver matters.",
+    "resinDuplicate": "The source table lists Resin TWICE: (Value 25, Weight 2) and (Value 20, Weight 5). Likely two variants (production-site output vs standard). We seed the 20/5 version because observed port prices (44/41, 46/43) align with it. FLAGGED - verify in game.",
+    "auctionTooltipData": "In-game item tooltips in the Auction tab additionally show server-wide aggregates: 'Items listed at the auction' (total qty) and 'Average price' with separate up/down figures (observed for Sailcloth: 1574 pcs listed, avg 72 buy / 245 sell). This is a built-in price reference and a strong future OCR target - it gives market-wide averages rather than a single port's price."
+  },
+  "craftMaterials": [
+    {
+      "id": "wood",
+      "name": "Wood",
+      "weight": 2,
+      "baseValue": 2,
+      "perishable": false,
+      "category": "raw"
+    },
+    {
+      "id": "fabric",
+      "name": "Fabric",
+      "weight": 1,
+      "baseValue": 3,
+      "perishable": false,
+      "category": "processed"
+    },
+    {
+      "id": "iron",
+      "name": "Iron",
+      "weight": 4,
+      "baseValue": 3,
+      "perishable": false,
+      "category": "metal"
+    },
+    {
+      "id": "iron_ore",
+      "name": "Iron Ore",
+      "weight": 6,
+      "baseValue": 3,
+      "perishable": false,
+      "category": "ore"
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "weight": 2,
+      "baseValue": 3,
+      "perishable": false,
+      "category": "raw"
+    },
+    {
+      "id": "fresh_meat",
+      "name": "Fresh Meat",
+      "weight": 5,
+      "baseValue": 4,
+      "perishable": true,
+      "category": "food"
+    },
+    {
+      "id": "wreckage",
+      "name": "Wreckage",
+      "weight": 5,
+      "baseValue": 5,
+      "perishable": false,
+      "category": "raw"
+    },
+    {
+      "id": "fish",
+      "name": "Fish",
+      "weight": 3,
+      "baseValue": 6,
+      "perishable": true,
+      "category": "food"
+    },
+    {
+      "id": "rum",
+      "name": "Rum",
+      "weight": 6,
+      "baseValue": 8,
+      "perishable": false,
+      "category": "processed"
+    },
+    {
+      "id": "grain",
+      "name": "Grain",
+      "weight": 20,
+      "baseValue": 8,
+      "perishable": true,
+      "category": "food"
+    },
+    {
+      "id": "coal",
+      "name": "Coal",
+      "weight": 5,
+      "baseValue": 10,
+      "perishable": false,
+      "category": "raw"
+    },
+    {
+      "id": "whale_oil",
+      "name": "Whale Oil",
+      "weight": 15,
+      "baseValue": 10,
+      "perishable": false,
+      "category": "raw"
+    },
+    {
+      "id": "tackles",
+      "name": "Tackles",
+      "weight": 5,
+      "baseValue": 12,
+      "perishable": false,
+      "category": "processed"
+    },
+    {
+      "id": "animals",
+      "name": "Animals",
+      "weight": 22,
+      "baseValue": 12,
+      "perishable": false,
+      "category": "food",
+      "note": "Tooltip states animals survive long voyages - explicitly exempt from spoilage. Requires hold/deck cleaning."
+    },
+    {
+      "id": "supplies",
+      "name": "Supplies",
+      "weight": 5,
+      "baseValue": 15,
+      "perishable": true,
+      "category": "food"
+    },
+    {
+      "id": "copper_ore",
+      "name": "Copper Ore",
+      "weight": 25,
+      "baseValue": 20,
+      "perishable": false,
+      "category": "ore"
+    },
+    {
+      "id": "resin",
+      "name": "Resin",
+      "weight": 5,
+      "baseValue": 20,
+      "perishable": false,
+      "category": "processed",
+      "note": "Source table lists a second Resin entry at Value 25 / Weight 2. Unresolved - verify."
+    },
+    {
+      "id": "copper",
+      "name": "Copper",
+      "weight": 10,
+      "baseValue": 30,
+      "perishable": false,
+      "category": "metal",
+      "note": "CONFIRMED by in-game tooltip: Weight 10, Value 30."
+    },
+    {
+      "id": "volcanic_ore",
+      "name": "Volcanic Ore",
+      "weight": 40,
+      "baseValue": 30,
+      "perishable": false,
+      "category": "ore"
+    },
+    {
+      "id": "captives",
+      "name": "Captives",
+      "weight": 60,
+      "baseValue": 30,
+      "perishable": false,
+      "category": "contraband",
+      "note": "Pirate-port only trade. Flag appropriately in UI."
+    },
+    {
+      "id": "provision",
+      "name": "Provision",
+      "weight": 40,
+      "baseValue": 50,
+      "perishable": false,
+      "category": "food",
+      "note": "Tooltip explicitly states Provisions do NOT spoil - the exception that confirms spoilage exists for other foods."
+    },
+    {
+      "id": "canvas",
+      "name": "Sailcloth",
+      "weight": 10,
+      "baseValue": 70,
+      "perishable": false,
+      "category": "processed",
+      "aliases": [
+        "Canvas"
+      ],
+      "note": "CONFIRMED by in-game tooltip: Weight 10, Value 70. NOTE: the source wiki table calls this 'Canvas' with identical stats and an identical description; in-game it is 'Sailcloth'. Same item, two names. Crafted from 10 Fabric + 1 Resin."
+    },
+    {
+      "id": "beam",
+      "name": "Beam",
+      "weight": 150,
+      "baseValue": 240,
+      "perishable": false,
+      "category": "component"
+    },
+    {
+      "id": "bulkhead",
+      "name": "Bulkhead",
+      "weight": 210,
+      "baseValue": 280,
+      "perishable": false,
+      "category": "component"
+    },
+    {
+      "id": "plate",
+      "name": "Plate",
+      "weight": 100,
+      "baseValue": 380,
+      "perishable": false,
+      "category": "component"
+    },
+    {
+      "id": "bronze",
+      "name": "Bronze",
+      "weight": 90,
+      "baseValue": 390,
+      "perishable": false,
+      "category": "metal"
+    }
+  ],
+  "specialItems": [
+    {
+      "id": "amber",
+      "name": "Amber",
+      "weight": 5,
+      "baseValue": 100,
+      "category": "luxury"
+    },
+    {
+      "id": "antiquities",
+      "name": "Antiquities",
+      "weight": 4,
+      "baseValue": 20,
+      "category": "luxury"
+    },
+    {
+      "id": "seahorse",
+      "name": "Seahorse",
+      "weight": 1,
+      "baseValue": 1000,
+      "category": "luxury"
+    },
+    {
+      "id": "voodoo_skull",
+      "name": "Voodoo Skull",
+      "weight": 7,
+      "baseValue": 4000,
+      "category": "luxury"
+    },
+    {
+      "id": "battle_mark",
+      "name": "Battle Mark",
+      "weight": 1,
+      "baseValue": 200,
+      "category": "currency"
+    },
+    {
+      "id": "escudo",
+      "name": "Escudo",
+      "weight": 1,
+      "baseValue": 2000,
+      "category": "currency"
+    },
+    {
+      "id": "pirate_token",
+      "name": "Pirate Token",
+      "weight": 1,
+      "baseValue": 150,
+      "category": "currency"
+    },
+    {
+      "id": "chest",
+      "name": "Chest",
+      "weight": 2,
+      "baseValue": 500,
+      "category": "currency"
+    },
+    {
+      "id": "chest_key",
+      "name": "Chest Key",
+      "weight": 1,
+      "baseValue": 25000,
+      "category": "key"
+    },
+    {
+      "id": "blueprint_fragment",
+      "name": "Blueprint Fragment",
+      "weight": 1,
+      "baseValue": 10000,
+      "category": "blueprint"
+    },
+    {
+      "id": "imperial_blueprint",
+      "name": "Imperial Blueprint",
+      "weight": 1,
+      "baseValue": 1000000,
+      "category": "blueprint"
+    },
+    {
+      "id": "modification_blueprint",
+      "name": "Modification Blueprint",
+      "weight": 1,
+      "baseValue": 10000,
+      "category": "blueprint"
+    },
+    {
+      "id": "insurance",
+      "name": "Insurance",
+      "weight": 1,
+      "baseValue": 60000,
+      "category": "document"
+    },
+    {
+      "id": "construction_license",
+      "name": "Construction License",
+      "weight": 1,
+      "baseValue": 400000,
+      "category": "document"
+    },
+    {
+      "id": "scrolls",
+      "name": "Scrolls",
+      "weight": 1,
+      "baseValue": 50,
+      "category": "document"
+    }
+  ],
+  "craftingRecipes": {
+    "_note": "Confirmed from the in-game Encyclopedia Craft page. Not needed for V1 trading, included for the Phase 2+ crafting calculator.",
+    "beam": {
+      "output": 1,
+      "inputs": {
+        "wood": 100,
+        "iron": 5
+      }
+    },
+    "bronze": {
+      "output": 1,
+      "inputs": {
+        "iron": 20,
+        "copper": 10,
+        "coal": 1
+      }
+    },
+    "plate": {
+      "output": 1,
+      "inputs": {
+        "coal": 15,
+        "resin": 4,
+        "iron": 30
+      }
+    },
+    "sailcloth": {
+      "output": 1,
+      "inputs": {
+        "fabric": 10,
+        "resin": 1
+      }
+    },
+    "bulkhead": {
+      "output": 1,
+      "inputs": {
+        "resin": 1,
+        "iron": 70
+      }
+    },
+    "imperial_blueprint": {
+      "output": 1,
+      "inputs": {
+        "blueprint_fragment": 100
+      }
+    },
+    "iron_from_ore": {
+      "output": 10,
+      "inputs": {
+        "iron_ore": 10,
+        "coal": 1
+      }
+    }
+  }
+}

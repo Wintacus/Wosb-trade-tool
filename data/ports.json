@@ -1,0 +1,101 @@
+{
+  "_meta": {
+    "description": "World of Sea Battle port seed data. 41 ports.",
+    "coordinateSource": "kptjahir/world-of-sea-battle-map ports.csv (open fan map project). Pixel coordinates on a consistent map image; used for relative distance only, NOT real-world units.",
+    "coordinateSystem": "x increases east, y increases south. Map bounds approx x:0-1800, y:0-1450.",
+    "categoryCodes": {
+      "n": "Standard capturable port/city (majority)",
+      "f": "Free / neutral settlement - largely uncapturable",
+      "k": "Caliphate port - tendered by Trade Union guilds",
+      "p": "Pirate cove"
+    },
+    "categoryConfidence": "MEDIUM. 'k' is CONFIRMED (Assab, Al-Khalif, Sharhat match the wiki's Caliphate list exactly). 'p' is CONFIRMED for pirate coves. 'f' vs 'n' is INFERRED: the 8 'f' ports closely match the wiki's 8 Neutral Settlements, but with two discrepancies (wiki lists Puerto Salada as neutral, CSV marks it 'n'; CSV marks St. John 'f', wiki does not list it). Treat category as a display hint, not a rule. Verify in-game.",
+    "verifiedInGame": [
+      "Puerto Salada Bay - tooltip reads 'Neutral settlement' (CSV says n) - DISCREPANCY",
+      "St. Jean Bay - tooltip reads 'Neutral settlement' (CSV says f) - consistent with f=neutral",
+      "Freebooter Bay - tooltip reads 'Independence declared', pirate cove behaviour (CSV says p) - consistent",
+      "Fiji Bay - tooltip reads 'Belongs to: [TIF] Espaniol' (CSV says n) - consistent with n=capturable",
+      "Port Bord Radel - tooltip reads 'Belongs to: [DED] Antilia' (CSV says n) - consistent",
+      "Los Catuano Bay - tooltip reads 'Belongs to: [TIF] Espaniol' (CSV says n) - consistent"
+    ],
+    "nameNote": "In-game names are often longer than CSV names (e.g. CSV 'Brandport' = in-game 'Brandport Bay'; CSV 'St. John' = in-game 'St. Jean Bay'; CSV 'Santa Maria' = in-game 'Santa Marta'; CSV 'Northside' = in-game 'Northside Cove'; CSV 'Bord Radel' = in-game 'Port Bord Radel'). The displayName field should be corrected in-app as ports are visited.",
+    "editableFields": "taxPercent, dockingFee, minShipRate, controllingFaction, portLevel, hasMarket are all per-port and CHANGE OVER TIME (guild capture, patches). They ship as nulls and are filled by users. Never hardcode.",
+    "unverifiedDefaults": {
+      "taxPercent": "null until observed. Observed real values: 4 (Freebooter Bay), 8 (Puerto Salada, Port Bord Radel, Los Catuano, Fiji), 12 (St. Jean). Do NOT assume 8 globally.",
+      "dockingFee": "null. NEVER directly observed in game. Treat as 0 in calculations until a user enters a value. Must be visibly labelled 'unverified' in UI.",
+      "minShipRate": "null. Observed: 'Shallow waters ranks VI-7' on Puerto Salada, Freebooter Bay, Los Catuano, Fiji. Means only rate VI and VII ships may dock AND undock. Roman numeral in game; store as integer 1-7."
+    }
+  },
+  "ports": [
+    { "id": "assab",            "name": "Assab",            "displayName": "Assab",             "x": 97,   "y": 1211, "category": "k" },
+    { "id": "cursed_city",      "name": "Cursed City",      "displayName": "Cursed City",       "x": 101,  "y": 636,  "category": "n" },
+    { "id": "al_khalif",        "name": "Al-Khalif",        "displayName": "Al-Khalif",         "x": 110,  "y": 1393, "category": "k" },
+    { "id": "nisogora",         "name": "Nisogora",         "displayName": "Nisogora",          "x": 166,  "y": 434,  "category": "n" },
+    { "id": "nordberg",         "name": "Nordberg",         "displayName": "Nordberg",          "x": 217,  "y": 301,  "category": "f" },
+    { "id": "west_bastion",     "name": "West Bastion",     "displayName": "West Bastion",      "x": 214,  "y": 818,  "category": "n" },
+    { "id": "sharhat",          "name": "Sharhat",          "displayName": "Sharhat",           "x": 290,  "y": 1105, "category": "k" },
+    { "id": "oneg",             "name": "Oneg",             "displayName": "Oneg",              "x": 341,  "y": 121,  "category": "n" },
+    { "id": "naabad_stronghold","name": "Naabad Stronghold","displayName": "Naabad Stronghold", "x": 403,  "y": 676,  "category": "p" },
+    { "id": "gelbion",          "name": "Gelbion",          "displayName": "Gelbion",           "x": 483,  "y": 342,  "category": "n" },
+    { "id": "masadora",         "name": "Masadora",         "displayName": "Masadora",          "x": 499,  "y": 829,  "category": "n" },
+    { "id": "devios",           "name": "Devios",           "displayName": "Devios",            "x": 540,  "y": 1177, "category": "n" },
+    { "id": "el_tigre",         "name": "El Tigre",         "displayName": "El Tigre",          "x": 552,  "y": 1364, "category": "f" },
+    { "id": "surako",           "name": "Surako",           "displayName": "Surako",            "x": 553,  "y": 529,  "category": "f" },
+    { "id": "corsa_nois_bay",   "name": "Corsa-Nois Bay",   "displayName": "Corsa-Nois Bay",    "x": 672,  "y": 102,  "category": "p" },
+    { "id": "bridgetown",       "name": "Bridgetown",       "displayName": "Bridgetown",        "x": 730,  "y": 836,  "category": "n" },
+    { "id": "san_cristobel",    "name": "San Cristobel",    "displayName": "San Cristobel",     "x": 751,  "y": 1350, "category": "n" },
+    { "id": "charleston",       "name": "Charleston",       "displayName": "Charleston",        "x": 763,  "y": 986,  "category": "n" },
+    { "id": "nevis",            "name": "Nevis",            "displayName": "Nevis",             "x": 826,  "y": 539,  "category": "n" },
+    { "id": "pirate_city",      "name": "Pirate City",      "displayName": "Pirate City",       "x": 843,  "y": 1419, "category": "p" },
+    { "id": "everston",         "name": "Everston",         "displayName": "Everston",          "x": 867,  "y": 232,  "category": "n" },
+    { "id": "laguna_blanco",    "name": "Laguna Blanco",    "displayName": "Laguna Blanco",     "x": 975,  "y": 969,  "category": "n" },
+    { "id": "aruba",            "name": "Aruba",            "displayName": "Aruba",             "x": 1083, "y": 354,  "category": "n" },
+    { "id": "san_martinas",     "name": "San Martinas",     "displayName": "San Martinas",      "x": 1089, "y": 1375, "category": "n" },
+    { "id": "tortuga",          "name": "Tortuga",          "displayName": "Tortuga",           "x": 1129, "y": 771,  "category": "p" },
+    { "id": "la_navidad",       "name": "La Navidad",       "displayName": "La Navidad",        "x": 1244, "y": 918,  "category": "n" },
+    { "id": "thermopylae",      "name": "Thermopylae",      "displayName": "Thermopylae",       "x": 1260, "y": 617,  "category": "n" },
+    { "id": "aldansk",          "name": "Aldansk",          "displayName": "Aldansk",           "x": 1274, "y": 133,  "category": "f" },
+    { "id": "south_bastion",    "name": "South Bastion",    "displayName": "South Bastion",     "x": 1297, "y": 1287, "category": "n" },
+    { "id": "gray_island",      "name": "Gray Island",      "displayName": "Gray Island",       "x": 1343, "y": 403,  "category": "n" },
+    { "id": "st_john",          "name": "St. John",         "displayName": "St. Jean Bay",      "x": 1375, "y": 1016, "category": "f" },
+    { "id": "fiji",             "name": "Fiji",             "displayName": "Fiji Bay",          "x": 1454, "y": 747,  "category": "n" },
+    { "id": "severoangelsk",    "name": "Severoangelsk",    "displayName": "Severoangelsk",     "x": 1463, "y": 140,  "category": "n" },
+    { "id": "bord_radel",       "name": "Bord Radel",       "displayName": "Port Bord Radel",   "x": 1528, "y": 1400, "category": "n" },
+    { "id": "north_bastion",    "name": "North Bastion",    "displayName": "North Bastion",     "x": 1553, "y": 355,  "category": "n" },
+    { "id": "los_catuano",      "name": "Los Catuano",      "displayName": "Los Catuano Bay",   "x": 1582, "y": 1162, "category": "n" },
+    { "id": "brandport",        "name": "Brandport",        "displayName": "Brandport Bay",     "x": 1641, "y": 664,  "category": "f" },
+    { "id": "santa_maria",      "name": "Santa Maria",      "displayName": "Santa Marta",       "x": 1716, "y": 1021, "category": "f" },
+    { "id": "northside",        "name": "Northside",        "displayName": "Northside Cove",    "x": 1718, "y": 201,  "category": "n" },
+    { "id": "puerto_salada",    "name": "Puerto Salada",    "displayName": "Puerto Salada Bay", "x": 1739, "y": 1232, "category": "n" },
+    { "id": "freebooter_bay",   "name": "Freebooter Bay",   "displayName": "Freebooter Bay",    "x": 1763, "y": 835,  "category": "p" },
+    { "id": "freedom_bay",      "name": "Freedom Bay",      "displayName": "Freedom Bay",       "x": 1769, "y": 508,  "category": "f" }
+  ],
+  "zones": {
+    "_note": "15 named maritime zones from the Fandom wiki. Ports have NOT yet been mapped to zones - this is an open task. Zones matter because trade good prices scale with distance from the good's home region.",
+    "list": [
+      "Antillean Islands", "Aurora Islands", "Casa Nuevo", "Danamar", "Dragon Islands",
+      "Friesland", "Heart of the Abyss", "Islas Dias Augado", "Lagonav", "Lagrimas de Viudas",
+      "Khalij Albaharad", "Sea of Conquistadors", "Sea of Nozula", "Stevenson Islands",
+      "Strait of a Thousand Dead Man"
+    ]
+  },
+  "factions": {
+    "_note": "Port controlling faction is dynamic (guild warfare) and must be user-editable per port. These are the faction definitions only.",
+    "list": [
+      { "id": "antilia",    "name": "Antilia",       "type": "military", "atWarWith": ["espaniol", "kai_severia", "pirates"] },
+      { "id": "espaniol",   "name": "Espaniol",      "type": "military", "atWarWith": ["antilia", "kai_severia", "pirates"] },
+      { "id": "kai_severia","name": "Kai & Severia", "type": "military", "atWarWith": ["antilia", "espaniol", "pirates"] },
+      { "id": "trade_union","name": "Trade Union",   "type": "trade",    "atWarWith": ["pirates"] },
+      { "id": "pirates",    "name": "Pirates",       "type": "pirate",   "atWarWith": ["antilia", "espaniol", "kai_severia", "trade_union"] },
+      { "id": "empire",     "name": "Empire",        "type": "neutral",  "atWarWith": [] },
+      { "id": "none",       "name": "Unaligned",     "type": "neutral",  "atWarWith": [] }
+    ],
+    "reputationFactions": ["antilia", "espaniol", "kai_severia"],
+    "notes": [
+      "Players may have NO faction (observed in game: 'My faction: No'). Unaligned must be a valid player state.",
+      "Reputation exists only with the three military factions. Observed scale example: Espaniol 7, Antilia 5, Kai & Severia 5, all 'neutral'.",
+      "Trade Union is neutral toward all except Pirates. Pirates are hostile to all.",
+      "Trading at a port whose faction matches your own is reported to give a discount (community sources cite ~25% on materials). UNVERIFIED for the 20 trade goods. Ship as a configurable modifier defaulting to 0."
+    ]
+  }
+}

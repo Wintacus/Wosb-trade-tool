@@ -1,0 +1,105 @@
+{
+  "_meta": {
+    "description": "Ship reference data. Stats transcribed directly from in-game Shipyard stat cards photographed by the user - the most reliable source available.",
+    "confidence": "HIGH for the 38 ships below. Every value was read off a live in-game card, not a fan wiki.",
+    "structure": "6 classes x 7 rates. Rate VII is the smallest/weakest, rate I the largest. Class determines role: Fast=speed, Battle/Combat=weapons, Transport=hold, Heavy=defense, Siege=mortars, Imperial=special.",
+    "criticalFields": {
+      "hold": "The ONLY cargo constraint. There is NO separate cargo-slot limit - this was an early design assumption that proved false. Hold is measured in the same units as item weight (1:1).",
+      "speed": "BASE speed only. In game the HUD displays a RANGE (e.g. Pickle 9.2-11.7) where the first number is base and the second is max cruise speed. Cards show only the base. The calculator uses BASE and must visibly note that actual speed varies with wind direction, sail upgrades and cargo load.",
+      "rate": "Integer 1-7, converted from the Roman numeral shown in game. Governs shallow-water access: a port with 'Shallow waters ranks VI-7' admits ONLY rate 6 and 7 ships, for BOTH docking and undocking.",
+      "upgradeSlots": "Observed to vary by ship (e.g. Pickle 6, Russia 8). Where unknown, null. The Structural Expansion upgrade adds +2."
+    },
+    "validationEvidence": "Live in-game ship HUDs confirmed that upgrade modifiers apply correctly on top of these base values: Le Cerf base hold 8000 -> live 11000 (+3000 Double Hold) and base durability 900 -> live 855 (-5% Double Hold). Russia base 22000 -> live 26500 (+3000 Double Hold +1500 Cellars) and 1600 -> 1520 (-5%). Horizont base durability 850 -> live 930 (+80 Repair Arsenal). The flat/percentage modifier model is therefore verified against real data.",
+    "incompleteRoster": "The Fandom wiki lists ~58 ships total. The 38 below are those visible in the user's shipyard plus one premium ship. NOT YET CAPTURED: Axel Thorsen, Svannah, Sovereign, Le Saint Louis, Kwee Song, Shunsen, Flying Cloud, Friedrich Wilhelm, St. Pavel, Vasa, Azov, Shen, Firestorm, Neptuno, De Zeven Provincien, Santisima Trinidad, Prins Willem, Red Arrow, Sparrow, Eagle. Individual wiki pages exist for each; they can be added without new screenshots. The app must handle an incomplete roster gracefully and allow users to add ships."
+  },
+  "classes": ["Fast", "Battle", "Transport", "Heavy", "Siege", "Imperial"],
+  "ships": [
+    { "id": "huracan",      "name": "Huracan",       "class": "Imperial",  "hullType": "Ship of the Line", "rate": 1, "durability": 8000, "speed": 5.5,  "maneuverability": 42,  "armor": 11.5, "hold": 54000, "crew": 288, "verified": true },
+    { "id": "la_royale",    "name": "La Royale",     "class": "Siege",     "hullType": "Galley",           "rate": 1, "durability": 2900, "speed": 7.4,  "maneuverability": 83,  "armor": 6.5,  "hold": 24000, "crew": 156, "verified": true },
+    { "id": "12_apostolov", "name": "12 Apostolov",  "class": "Heavy",     "hullType": "Ship of the Line", "rate": 1, "durability": 4400, "speed": 6.2,  "maneuverability": 49,  "armor": 10,   "hold": 36000, "crew": 220, "verified": true },
+    { "id": "la_couronne",  "name": "La Couronne",   "class": "Transport", "hullType": "Galleon",          "rate": 1, "durability": 3500, "speed": 7.6,  "maneuverability": 72,  "armor": 5.5,  "hold": 50000, "crew": 188, "verified": true },
+    { "id": "victory",      "name": "Victory",       "class": "Battle",    "hullType": "Ship of the Line", "rate": 1, "durability": 3740, "speed": 7.1,  "maneuverability": 66,  "armor": 8,    "hold": 25000, "crew": 204, "verified": true },
+
+    { "id": "octopus",      "name": "Octopus",       "class": "Imperial",  "hullType": "Ship",             "rate": 2, "durability": 2760, "speed": 8.3,  "maneuverability": 75,  "armor": 6.8,  "hold": 23000, "crew": 176, "verified": true },
+    { "id": "adventure",    "name": "Adventure",     "class": "Siege",     "hullType": "Galley",           "rate": 2, "durability": 2660, "speed": 8.2,  "maneuverability": 92,  "armor": 5.2,  "hold": 21000, "crew": 140, "verified": true },
+    { "id": "redoutable",   "name": "Redoutable",    "class": "Heavy",     "hullType": "Ship of the Line", "rate": 2, "durability": 3540, "speed": 7.0,  "maneuverability": 57,  "armor": 8,    "hold": 30500, "crew": 198, "verified": true },
+    { "id": "la_sirene",    "name": "La Sirene",     "class": "Transport", "hullType": "Ship",             "rate": 2, "durability": 2660, "speed": 8.1,  "maneuverability": 80,  "armor": 4.4,  "hold": 43000, "crew": 170, "verified": true },
+    { "id": "sans_pareil",  "name": "Sans Pareil",   "class": "Battle",    "hullType": "Ship of the Line", "rate": 2, "durability": 3000, "speed": 7.7,  "maneuverability": 74,  "armor": 6.4,  "hold": 21500, "crew": 184, "verified": true },
+    { "id": "ingermanland", "name": "Ingermanland",  "class": "Fast",      "hullType": "Ship of the Line", "rate": 2, "durability": 2340, "speed": 9.0,  "maneuverability": 87,  "armor": 3.2,  "hold": 17500, "crew": 152, "verified": true },
+
+    { "id": "deadfish",     "name": "Deadfish",      "class": "Imperial",  "hullType": "Ship",             "rate": 3, "durability": 3000, "speed": 6.6,  "maneuverability": 66,  "armor": 8,    "hold": 27000, "crew": 166, "verified": true },
+    { "id": "kobukson",     "name": "Kobukson",      "class": "Siege",     "hullType": "Phanokson",        "rate": 3, "durability": 2000, "speed": 8.0,  "maneuverability": 85,  "armor": 4.6,  "hold": 18000, "crew": 124, "verified": true },
+    { "id": "bellona",      "name": "Bellona",       "class": "Heavy",     "hullType": "Ship of the Line", "rate": 3, "durability": 3180, "speed": 7.5,  "maneuverability": 62,  "armor": 7,    "hold": 26000, "crew": 174, "verified": true },
+    { "id": "mordaunt",     "name": "Mordaunt",      "class": "Transport", "hullType": "Ship of the Line", "rate": 3, "durability": 2380, "speed": 8.7,  "maneuverability": 87,  "armor": 3.9,  "hold": 34000, "crew": 148, "verified": true },
+    { "id": "anson",        "name": "Anson",         "class": "Battle",    "hullType": "Ship of the Line", "rate": 3, "durability": 2700, "speed": 8.2,  "maneuverability": 80,  "armor": 5.6,  "hold": 18500, "crew": 160, "verified": true },
+    { "id": "poltava",      "name": "Poltava",       "class": "Fast",      "hullType": "Ship of the Line", "rate": 3, "durability": 2100, "speed": 9.6,  "maneuverability": 95,  "armor": 2.8,  "hold": 15500, "crew": 132, "verified": true },
+
+    { "id": "devourer",     "name": "Devourer",      "class": "Imperial",  "hullType": "Barque",           "rate": 4, "durability": 1760, "speed": 7.5,  "maneuverability": 110, "armor": 5.5,  "hold": 17000, "crew": 144, "verified": true },
+    { "id": "constitution", "name": "Constitution",  "class": "Heavy",     "hullType": "Frigate",          "rate": 4, "durability": 2560, "speed": 8.0,  "maneuverability": 68,  "armor": 6,    "hold": 21500, "crew": 148, "verified": true },
+    { "id": "falmouth",     "name": "Falmouth",      "class": "Transport", "hullType": "Ship",             "rate": 4, "durability": 1920, "speed": 9.4,  "maneuverability": 96,  "armor": 3.3,  "hold": 27500, "crew": 126, "verified": true },
+    { "id": "essex",        "name": "Essex",         "class": "Battle",    "hullType": "Frigate",          "rate": 4, "durability": 2160, "speed": 8.9,  "maneuverability": 88,  "armor": 4.8,  "hold": 15500, "crew": 136, "verified": true },
+    { "id": "surprise",     "name": "Surprise",      "class": "Fast",      "hullType": "Corvette",         "rate": 4, "durability": 1680, "speed": 10.5, "maneuverability": 105, "armor": 2.4,  "hold": 13000, "crew": 112, "verified": true },
+
+    { "id": "black_prince", "name": "Black Prince",  "class": "Imperial",  "hullType": "Galleon",          "rate": 5, "durability": 1700, "speed": 9.9,  "maneuverability": 90,  "armor": 3,    "hold": 14500, "crew": 120, "verified": true },
+    { "id": "le_requin",    "name": "Le Requin",     "class": "Siege",     "hullType": "Xebec",            "rate": 5, "durability": 1520, "speed": 9.6,  "maneuverability": 105, "armor": 3.2,  "hold": 12500, "crew": 88,  "verified": true },
+    { "id": "san_martin",   "name": "San Martin",    "class": "Heavy",     "hullType": "Galleon",          "rate": 5, "durability": 2140, "speed": 8.5,  "maneuverability": 72,  "armor": 5,    "hold": 17500, "crew": 126, "verified": true },
+    { "id": "russia",       "name": "Russia",        "class": "Transport", "hullType": "Frigate",          "rate": 5, "durability": 1600, "speed": 9.9,  "maneuverability": 91,  "armor": 2.7,  "hold": 22000, "crew": 108, "verified": true, "upgradeSlots": 8 },
+    { "id": "black_wind",   "name": "Black Wind",    "class": "Battle",    "hullType": "Frigate",          "rate": 5, "durability": 1820, "speed": 9.4,  "maneuverability": 84,  "armor": 4,    "hold": 13000, "crew": 116, "verified": true },
+    { "id": "la_creole",    "name": "La Creole",     "class": "Fast",      "hullType": "Corvette",         "rate": 5, "durability": 1400, "speed": 11.0, "maneuverability": 100, "armor": 2,    "hold": 11000, "crew": 96,  "verified": true },
+
+    { "id": "balloon",      "name": "Balloon",       "class": "Imperial",  "hullType": "Montgolfiere",     "rate": 6, "durability": 200,  "speed": 21.0, "maneuverability": 50,  "armor": 1,    "hold": 1000,  "crew": 8,   "verified": true,
+      "note": "Airship. Cannot move against the wind. Unlock-gated. Extreme outlier - exclude from default route comparisons." },
+    { "id": "golden_apostle","name": "Golden Apostle","class": "Siege",    "hullType": "Unknown",          "rate": 6, "durability": 900,  "speed": 9.5,  "maneuverability": 120, "armor": 2.2,  "hold": 8500,  "crew": 96,  "verified": true,
+      "note": "Premium/unique ship. Not present on the standard shipyard grid. Stats read from live HUD, so speed 9.5 is the base of the displayed 9.5-11.9 range." },
+    { "id": "phoenix",      "name": "Phoenix",       "class": "Heavy",     "hullType": "Brig",             "rate": 6, "durability": 1380, "speed": 8.2,  "maneuverability": 75,  "armor": 4.5,  "hold": 12500, "crew": 104, "verified": true },
+    { "id": "polacca",      "name": "Polacca",       "class": "Siege",     "hullType": "Polacca",          "rate": 6, "durability": 980,  "speed": 9.0,  "maneuverability": 102, "armor": 2.9,  "hold": 9000,  "crew": 74,  "verified": true, "upgradeSlots": 6 },
+    { "id": "mercury",      "name": "Mercury",       "class": "Transport", "hullType": "Galleon",          "rate": 6, "durability": 1040, "speed": 9.2,  "maneuverability": 89,  "armor": 2.5,  "hold": 15500, "crew": 88,  "verified": true },
+    { "id": "la_salamandre","name": "La Salamandre", "class": "Battle",    "hullType": "Ketch",            "rate": 6, "durability": 1160, "speed": 8.8,  "maneuverability": 82,  "armor": 3.6,  "hold": 9500,  "crew": 96,  "verified": true },
+    { "id": "le_cerf",      "name": "Le Cerf",       "class": "Fast",      "hullType": "Cutter",           "rate": 6, "durability": 900,  "speed": 10.0, "maneuverability": 97,  "armor": 1.8,  "hold": 8000,  "crew": 78,  "verified": true, "upgradeSlots": 8 },
+
+    { "id": "friede",       "name": "Friede",        "class": "Transport", "hullType": "Flute",            "rate": 7, "durability": 750,  "speed": 8.8,  "maneuverability": 86,  "armor": 2.2,  "hold": 11000, "crew": 72,  "verified": true, "upgradeSlots": 6,
+      "note": "STARTER SHIP. Best early trading vessel - nearly double Pickle's hold." },
+    { "id": "horizont",     "name": "Horizont",      "class": "Battle",    "hullType": "Brigantine",       "rate": 7, "durability": 850,  "speed": 8.4,  "maneuverability": 80,  "armor": 3.2,  "hold": 7000,  "crew": 78,  "verified": true, "upgradeSlots": 6 },
+    { "id": "pickle",       "name": "Pickle",        "class": "Fast",      "hullType": "Schooner",         "rate": 7, "durability": 700,  "speed": 9.2,  "maneuverability": 94,  "armor": 1.6,  "hold": 6000,  "crew": 66,  "verified": true, "upgradeSlots": 6,
+      "note": "STARTER SHIP." }
+  ],
+  "upgrades": {
+    "_meta": {
+      "description": "Ship upgrades. Modifiers are either FLAT (absolute value) or PERCENT. Both types confirmed in game. Upgrades occupy limited slots (per-ship, typically 6-8).",
+      "wear": "Upgrades degrade with use - live HUD showed 'Wear: 213928 Distance traveled' and 'Wear: 73442 Damage taken'. Replacement cost is NOT modelled in V1. Phase 2.",
+      "onlyTradeRelevantListed": "Combat/mortar upgrades exist but are omitted - they do not affect trading math."
+    },
+    "cargo": [
+      { "id": "double_hold",   "name": "Double Hold",             "hold": 3000,        "holdPercent": null, "durabilityPercent": -5,  "itemLossPercent": -40 },
+      { "id": "cellars",       "name": "Cellars",                 "hold": 1500,        "holdPercent": null, "preventsSpoilage": true },
+      { "id": "sturdy_frames", "name": "Sturdy Frames",           "hold": null,        "holdPercent": 12,   "durabilityPercent": 10, "speedPercent": -15 },
+      { "id": "lightweight_construction", "name": "Lightweight Construction", "hold": null, "holdPercent": 25, "mortarDamagePercent": -25 }
+    ],
+    "speed": [
+      { "id": "reinforced_masts", "name": "Reinforced Masts", "speedFlat": 0.6, "speedPercent": null, "sailEfficiency": 1.2 },
+      { "id": "lightweight_hull", "name": "Lightweight Hull", "speedFlat": null, "speedPercent": 4,   "maneuverabilityPercent": 5, "armorPercent": -15 },
+      { "id": "strong_beams",     "name": "Strong Beams",     "speedFlat": null, "speedPercent": -5,  "durabilityPercent": 5 }
+    ],
+    "sails": {
+      "_note": "Sails add to CRUISE speed (the upper bound of the displayed range), not base speed. Since the calculator uses base speed, sails are informational in V1 but should be storable on presets.",
+      "options": [
+        { "id": "cheap_sails",     "name": "Cheap Sails",     "cruiseSpeed": 2.0 },
+        { "id": "stitched_sails",  "name": "Stitched Sails",  "cruiseSpeed": 2.4 },
+        { "id": "ultralight_sails","name": "Ultra-light Sails","cruiseSpeed": 2.4, "maneuverabilityCruisingPercent": 15 },
+        { "id": "storm_sails",     "name": "Storm Sails",     "cruiseSpeed": 2.7 },
+        { "id": "elite_sails",     "name": "Elite Sails",     "cruiseSpeed": 2.8 },
+        { "id": "tacking_sails",   "name": "Tacking Sails",   "cruiseSpeed": 2.8, "maneuverabilityCruisingPercent": -20 },
+        { "id": "reefed_sails",    "name": "Reefed Sails",    "cruiseSpeed": 2.9 },
+        { "id": "tarpaulin_sails", "name": "Tarpaulin Sails", "cruiseSpeed": 3.1, "maneuverabilityFlat": -2 },
+        { "id": "raiding_sails",   "name": "Raiding Sails",   "cruiseSpeed": 4.1, "maneuverabilityCruisingPercent": -20 }
+      ]
+    },
+    "other": [
+      { "id": "structural_expansion", "name": "Structural Expansion", "upgradeSlots": 2, "maneuverabilityPercent": -10 },
+      { "id": "repair_arsenal",       "name": "Repair Arsenal",       "durabilityFlat": 80 },
+      { "id": "teak_frames",          "name": "Teak Frames",          "armorFlat": 2, "crewFlat": 6, "maneuverabilityPercent": -6 },
+      { "id": "extra_bunks",          "name": "Extra Bunks",          "crewFlat": 10 }
+    ],
+    "applicationOrder": "Apply FLAT modifiers first, then PERCENT modifiers, to the base stat. This ordering reproduces observed in-game values (e.g. Horizont 850 + 80 flat = 930 live; Le Cerf 900 * 0.95 = 855 live)."
+  }
+}

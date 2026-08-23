@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "description": "The 20 trade goods of World of Sea Battle. These are the primary profit vehicles: bought near their production region and sold far away.",
+    "source": "theirontide.org wiki resource table. That site states its data is extracted from decompiled game code.",
+    "confidence": "HIGH. Independently validated two ways: (1) an in-game tooltip for Copper read exactly Weight 10 / Value 30, matching the table; (2) all 20 observed live prices at Fiji Bay and a Settlement port fell inside the min/max ranges below, with six sitting exactly on max.",
+    "fieldDefinitions": {
+      "weight": "Cargo space consumed per unit. CONFIRMED 1:1 with ship Hold capacity (in-game hold reads e.g. '1425 / 11000' in the same units).",
+      "baseValue": "Reference 'Value' shown in the item tooltip. This is NOT the live market price - the Copper tooltip showed Value 30 while the port exchange showed 22/18.9. Use for display and sanity-checking only, never for profit math.",
+      "minPrice/maxPrice": "Observed price band across the world. Used ONLY for outlier sanity-checking on user submissions, never as a real price.",
+      "perishable": "All 20 trade goods default false. Spoilage exists in-game (the Cellars upgrade prevents it) but every identified perishable is a craft/food resource, not a trade good. See resources.json.",
+      "homeRegion": "null - UNKNOWN. The game states 'Each item has its own region. The farther from the region, the higher its selling price in cities.' Determining each good's home region is an OPEN TASK and would meaningfully improve recommendations."
+    },
+    "priceModelWarning": "IMPORTANT: We have never directly observed a Buy button on trade goods in the Market tab - only a greyed sell control (greyed because the hold was empty). The buy-near-source / sell-far model is inferred from the game's own encyclopedia text plus observed price patterns. It is strong evidence, not proof. THEREFORE: the schema stores buyPrice and sellPrice as SEPARATE nullable fields per port per good. If a spread turns out to exist, this is a data change, not a rewrite."
+  },
+  "goods": [
+    { "id": "beer",       "name": "Beer",       "weight": 6,  "baseValue": 5,  "minPrice": 5,  "maxPrice": 9,  "perishable": false, "homeRegion": null },
+    { "id": "dates",      "name": "Dates",      "weight": 6,  "baseValue": 8,  "minPrice": 8,  "maxPrice": 14, "perishable": false, "homeRegion": null },
+    { "id": "grog",       "name": "Grog",       "weight": 5,  "baseValue": 9,  "minPrice": 9,  "maxPrice": 16, "perishable": false, "homeRegion": null },
+    { "id": "nuts",       "name": "Nuts",       "weight": 5,  "baseValue": 9,  "minPrice": 9,  "maxPrice": 16, "perishable": false, "homeRegion": null },
+    { "id": "wine",       "name": "Wine",       "weight": 3,  "baseValue": 9,  "minPrice": 9,  "maxPrice": 16, "perishable": false, "homeRegion": null },
+    { "id": "mango",      "name": "Mango",      "weight": 4,  "baseValue": 11, "minPrice": 11, "maxPrice": 19, "perishable": false, "homeRegion": null },
+    { "id": "pineapples", "name": "Pineapples", "weight": 4,  "baseValue": 11, "minPrice": 11, "maxPrice": 19, "perishable": false, "homeRegion": null },
+    { "id": "oil",        "name": "Oil",        "weight": 3,  "baseValue": 13, "minPrice": 13, "maxPrice": 22, "perishable": false, "homeRegion": null },
+    { "id": "paprika",    "name": "Paprika",    "weight": 9,  "baseValue": 15, "minPrice": 15, "maxPrice": 26, "perishable": false, "homeRegion": null },
+    { "id": "salt",       "name": "Salt",       "weight": 5,  "baseValue": 18, "minPrice": 18, "maxPrice": 31, "perishable": false, "homeRegion": null },
+    { "id": "leather",    "name": "Leather",    "weight": 5,  "baseValue": 20, "minPrice": 20, "maxPrice": 34, "perishable": false, "homeRegion": null },
+    { "id": "pepper",     "name": "Pepper",     "weight": 6,  "baseValue": 21, "minPrice": 21, "maxPrice": 36, "perishable": false, "homeRegion": null },
+    { "id": "vanilla",    "name": "Vanilla",    "weight": 7,  "baseValue": 22, "minPrice": 22, "maxPrice": 38, "perishable": false, "homeRegion": null },
+    { "id": "cinnamon",   "name": "Cinnamon",   "weight": 7,  "baseValue": 23, "minPrice": 23, "maxPrice": 39, "perishable": false, "homeRegion": null },
+    { "id": "rugs",       "name": "Rugs",       "weight": 6,  "baseValue": 24, "minPrice": 24, "maxPrice": 41, "perishable": false, "homeRegion": null },
+    { "id": "coffee",     "name": "Coffee",     "weight": 12, "baseValue": 25, "minPrice": 25, "maxPrice": 43, "perishable": false, "homeRegion": null },
+    { "id": "sugar",      "name": "Sugar",      "weight": 20, "baseValue": 30, "minPrice": 30, "maxPrice": 51, "perishable": false, "homeRegion": null },
+    { "id": "tobacco",    "name": "Tobacco",    "weight": 14, "baseValue": 32, "minPrice": 32, "maxPrice": 55, "perishable": false, "homeRegion": null },
+    { "id": "saffron",    "name": "Saffron",    "weight": 15, "baseValue": 37, "minPrice": 37, "maxPrice": 63, "perishable": false, "homeRegion": null },
+    { "id": "silk",       "name": "Silk",       "weight": 20, "baseValue": 52, "minPrice": 52, "maxPrice": 88, "perishable": false, "homeRegion": null }
+  ],
+  "_validationEvidence": {
+    "note": "Live prices observed in game, used to validate the min/max bands above. All 20 fell inside range.",
+    "fijiBay_City": {
+      "sugar": 40, "beer": 7, "saffron": 63, "paprika": 26, "cinnamon": 39, "salt": 24,
+      "silk": 88, "rugs": 41, "dates": 14, "mango": 19, "tobacco": 42, "coffee": 33,
+      "leather": 27, "pepper": 28, "vanilla": 29, "nuts": 12, "wine": 12, "pineapples": 15,
+      "oil": 17, "grog": 12
+    },
+    "unnamedSettlement": {
+      "sugar": 39, "beer": 7, "saffron": 63, "paprika": 26, "cinnamon": 39, "salt": 23,
+      "silk": 88, "rugs": 41, "dates": 14, "mango": 19, "tobacco": 42, "coffee": 33,
+      "leather": 26, "pepper": 28, "vanilla": 29, "nuts": 12, "wine": 12, "pineapples": 15,
+      "oil": 17, "grog": 12
+    },
+    "portTypeEffect": "Cities show 'Many items available here'; Settlements show 'Fewer items available here'. Both restock 'every 1-2 days'. Prices differ slightly between the two (Sugar 40 vs 39, Salt 24 vs 23, Leather 27 vs 26), so portType is a real field worth storing."
+  }
+}
