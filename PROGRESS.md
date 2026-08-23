@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE and verified against the live database
+Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE, verified live, and audited
 
 ## Done
 
@@ -15,6 +15,18 @@ Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE and verified against t
       bounded knapsack, four metrics, return leg, optional gold limit.
 - [x] **Phase 1 — tests** — all eleven from SPEC.md §5.9, plus RLS verification, secret-leak
       guards and an end-to-end run. 121 assertions, all passing.
+
+## Audited
+
+A deliberate hunt for defects on 2026-08-23 found four, all now fixed and on main:
+service_role could not read `schema_migrations` so automatic updates would have failed
+on first use; a negative buy price conjured profit from nothing; the browser secret check
+scanned for names Vite never bundles so it could not catch a real leak while raising false
+ones; and a PostgREST schema-cache race would have broken the first automatic update.
+
+The lesson worth keeping: **202 tests passed over the first of those** because they stubbed
+PostgREST out. A mocked fetch answers 200 to a request the real database refuses. Prefer a
+real Postgres over a mock wherever the thing being tested is what the database will accept.
 
 ## Verified live
 
@@ -71,7 +83,9 @@ Phase 1 is done, so Phase 2 may begin.
   rather than either claiming it is best or implying it is bad — measured over 300 random
   cases the median gap is 0% and 97% land on the true optimum. Never present an unproven
   plan as optimal.
-- Two open offers the user has not answered: installing a migration function callable by
-  the service role key, so future schema changes need no password at all; and whether the
-  append-only `port_state` redesign is what they want (it was built after they dismissed
-  the question, and flagged at the time).
+- Both once-open questions are settled: the append-only `port_state` redesign is approved
+  and merged, and the migration function is wired up.
+- **The one remaining user step:** open `/api/migrate` once and enter the database password.
+  That installs `apply_migration`. After that no schema change ever needs a password again.
+- The knapsack was measured at 71ms for the largest hold in the game with all 61 goods, so
+  SPEC.md's claim that it runs comfortably in a browser holds.
