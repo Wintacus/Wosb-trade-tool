@@ -108,9 +108,12 @@ Phase 1 is done, so Phase 2 may begin.
   to tap anything for a schema change.
 - The knapsack was measured at 71ms for the largest hold in the game with all 61 goods, so
   SPEC.md's claim that it runs comfortably in a browser holds.
-- **Terse replies are the house style now.** The `caveman` skill is vendored at
-  `.claude/skills/caveman/`, pinned to its `lite` level, and CLAUDE.md says to apply it from
-  the first reply. Provenance, licence and what was deliberately left out are in
-  `.claude/skills/caveman/VENDOR.md`. Note the honest limit recorded there: it cuts **output**
-  tokens, and this project's spend is mostly **input**. The upstream piece that would cut input
-  is a local proxy, which cannot run in a phone-only, ephemeral-container setup.
+- **Two pieces of `caveman` are vendored, for token cost.** `.claude/skills/caveman/` pins
+  terse replies at its `lite` level — CLAUDE.md says to apply it from the first reply of every
+  session. `.claude/agents/caveman-explore.md` handles broad repo searches in a side channel and
+  reports back only `path:line` citations, so file contents stay out of the conversation.
+  Provenance, licence, hashes and what was deliberately left out are in
+  `.claude/skills/caveman/VENDOR.md`. **Read the honest limits there before quoting any saving:**
+  the skill only cuts output tokens, the agent only helps on repo search, and upstream's headline
+  33.2% belongs to a local proxy that cannot run in a phone-only, ephemeral-container setup.
+  Nothing has been measured on this project.

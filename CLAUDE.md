@@ -83,6 +83,7 @@ OCR is an accelerator. If OCR is broken, removed, or never finished, the app mus
 - **Calculator before UI.** The math is the product. Test it against known inputs before anything visual exists.
 - **Small commits, deploy often.** The user can only verify what's live. Commit and push after each meaningful step — never batch a whole phase into one commit at the end. Uncommitted work is the only thing that can actually be lost.
 - **When something fails, say what failed.** Don't silently work around a blocker — surface it.
+- **Delegate broad repo searches to the `caveman-explore` agent** (`.claude/agents/`). It reads files in a cheap side channel and reports back only `path:line` citations, so the file contents never land in this conversation. Use it for cold-start orientation, "where is X handled?" across several directories, or a search that already failed once. **Skip it** when the file is already named in this doc or `PROGRESS.md` — reading `src/domain/calculator.ts` directly is cheaper than delegating. It returns locations, never facts: re-read the actual line before quoting any game value from it.
 
 ---
 
