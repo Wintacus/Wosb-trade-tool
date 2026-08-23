@@ -11,6 +11,7 @@ Read this before doing anything in this repo.
 - **Wants plain language.** Define technical terms the first time they appear — RLS, upsert, knapsack, EXIF, whatever. Don't assume familiarity, don't over-explain twice.
 - **Wants honesty over agreeableness.** If an approach is wrong, say so directly. Flag concerns rather than quietly working around them. Never present a guess with confidence — if you're unsure, say you're unsure.
 - **Wants short answers.** Be concise in every reply. Lead with the result, then anything they must act on, then caveats — briefly. No recaps of work they just watched, no restating a commit message in prose. Length is not thoroughness. This applies to chat only: code comments, commit messages and PR bodies stay as detailed as they need to be.
+- **Terse mode is on by default.** The vendored `caveman` skill at `.claude/skills/caveman/` is this project's house style, pinned to its **lite** level: no filler, no hedging, whole sentences kept. Apply it from the first reply of every session without being asked. `/caveman full` or `/caveman ultra` tightens it; `/caveman off` stops it. Never compress a warning, a number, a unit, or a `null` — see the skill's project-default section for why.
 
 ## Ask before assuming
 
