@@ -127,10 +127,12 @@ export interface ResultInput {
   counts: { label: string; found: number; expected: number; ok: boolean }[];
   prices: number;
   portState: number;
+  /** Overrides the banner wording. Used by the no-password update path. */
+  heading?: string;
 }
 
 export function resultPage(input: ResultInput): string {
-  const { ok, steps, counts, prices, portState } = input;
+  const { ok, steps, counts, prices, portState, heading } = input;
 
   const stepRows = steps
     .map(
@@ -161,7 +163,7 @@ export function resultPage(input: ResultInput): string {
 </head><body><main>
 
 <div class="banner ${ok ? 'good' : 'fail'}">
-  ${ok ? 'Database is set up and verified.' : 'Something went wrong. Details below.'}
+  ${escapeHtml(heading ?? (ok ? 'Database is set up and verified.' : 'Something went wrong. Details below.'))}
 </div>
 
 <h2>What happened</h2>

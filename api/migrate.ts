@@ -5,12 +5,15 @@ import pg from 'pg';
 import type { Client as PgClient } from 'pg';
 import { schemaSql, seedSql, demoPricesSql } from './_sql.js';
 import { setupPage, resultPage } from './_page.js';
+import { applyPendingChanges } from './_auto.js';
 
 /**
  * One-page database setup.
  *
- * GET  /api/migrate   serves a form asking for the database password
- * POST /api/migrate   applies schema, seed and demo data, then verifies
+ * GET  /api/migrate            serves a form asking for the database password
+ * GET  /api/migrate?auto=1     applies pending schema changes with the service
+ *                              role key, needing no password at all
+ * POST /api/migrate            applies schema, seed and demo data, then verifies
  *
  * Deliberately needs NO configuration. The Supabase project reference is read
  * out of VITE_SUPABASE_URL, which is already set, and the connection string is
@@ -32,7 +35,12 @@ export const config = { maxDuration: 60 };
 interface Req {
   method?: string;
   body?: unknown;
+  query?: Record<string, string | string[] | undefined>;
   headers: Record<string, string | string[] | undefined>;
+}
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 interface Res {
@@ -214,6 +222,28 @@ async function run(req: Req, res: Res): Promise<void> {
   res.setHeader('Referrer-Policy', 'no-referrer');
 
   const ref = projectRef();
+
+  // Automatic mode: no password, because the service role key is already here.
+  // This is how every schema change after the first one gets applied.
+  if (req.method !== 'POST' && first(req.query?.auto) === '1') {
+    const result = await applyPendingChanges();
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(
+      resultPage({
+        ok: result.ok,
+        steps: result.steps,
+        counts: [],
+        prices: 0,
+        portState: 0,
+        heading: result.ok
+          ? result.applied.length > 0
+            ? `Applied ${result.applied.length} pending change${result.applied.length === 1 ? '' : 's'}.`
+            : 'Already up to date. Nothing to apply.'
+          : undefined,
+      }),
+    );
+    return;
+  }
 
   if (req.method !== 'POST') {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
