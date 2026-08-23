@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Secrets — never commit. If one is ever committed, ROTATE THE KEY.
+# Deleting the line does not remove it from git history.
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.swp
+
+# Vercel
+.vercel
+
+# Test / coverage
+coverage/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Scratch dir for the serverless ESM load test
+.apitest/
