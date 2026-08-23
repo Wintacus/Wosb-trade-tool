@@ -111,7 +111,7 @@ Last updated: <date> — <what session/phase>
 - Waiting on a decision about X
 
 ## Notes for the next session
-- Supabase SQL runs via the web SQL Editor; the user pastes it manually
+- Database setup runs from /api/migrate on the deployed site, not by pasting SQL
 ```
 
 ### Starting a session

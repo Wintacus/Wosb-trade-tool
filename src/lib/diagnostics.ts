@@ -162,24 +162,40 @@ export async function runDiagnostics(): Promise<Check[]> {
     });
   }
 
-  // --- Prices -----------------------------------------------------------
-  const prices = await countRows('prices_current');
-  if (prices.error) {
-    checks.push({
+  // --- The two views the calculator reads from --------------------------
+  // Both are the append-only tables resolved to a current answer. If either is
+  // unreadable the calculator has nothing to work with, so they are checked
+  // separately rather than assumed to follow from the table counts.
+  const views: { id: string; view: string; label: string; empty: string }[] = [
+    {
       id: 'prices',
-      label: 'prices_current view',
-      status: 'fail',
-      detail: prices.error,
-    });
-  } else {
+      view: 'prices_current',
+      label: 'Prices available',
+      empty: 'Readable, but no prices recorded yet. Add some, or load the demo data.',
+    },
+    {
+      id: 'port-state',
+      view: 'port_state_current',
+      label: 'Port state available',
+      empty:
+        'Readable, but no port has a recorded tax rate or shallow-water limit yet. ' +
+        'The calculator will report tax as unknown until one is entered.',
+    },
+  ];
+
+  for (const { id, view, label, empty } of views) {
+    const { count, error } = await countRows(view);
+    if (error) {
+      checks.push({ id, label, status: 'fail', detail: error });
+      continue;
+    }
     checks.push({
-      id: 'prices',
-      label: 'prices_current view',
-      status: (prices.count ?? 0) > 0 ? 'pass' : 'warn',
-      detail:
-        (prices.count ?? 0) > 0
-          ? `${prices.count} price rows available.`
-          : 'Readable, but empty. Run supabase/demo_prices.sql, or add real prices.',
+      id,
+      label,
+      // Empty is a warning, not a failure: a fresh database with no
+      // observations yet is working correctly, just not useful yet.
+      status: (count ?? 0) > 0 ? 'pass' : 'warn',
+      detail: (count ?? 0) > 0 ? `${count} rows.` : empty,
     });
   }
 

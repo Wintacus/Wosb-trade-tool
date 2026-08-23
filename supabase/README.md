@@ -1,41 +1,60 @@
 # Database setup
 
-Three files, run **in this order** in the Supabase SQL Editor
-(Dashboard → SQL Editor → New query → paste → Run).
+**You do not run these files by hand.** Open `/api/migrate` on the deployed
+site, type your Supabase database password, and it applies all three, verifies
+the result and shows you what it did.
 
-| Order | File | What it does | Required? |
-|---|---|---|---|
-| 1 | `schema.sql` | Creates every table, the `prices_current` view, and turns on row-level security with all its policies | Yes |
-| 2 | `seed.sql` | Loads 42 ports, 38 ships, 61 goods and 20 upgrades from `data/*.json` | Yes |
-| 3 | `demo_prices.sql` | Loads a small set of clearly-labelled fake prices so the calculator has something to chew on | Optional |
+The files are here because they are the source of truth for the schema, and
+because they are embedded into that endpoint at build time.
 
-All three are safe to run more than once.
+| File | What it does | Required? |
+|---|---|---|
+| `schema.sql` | Every table, both views, and row-level security with all its policies | Yes |
+| `seed.sql` | 42 ports, 38 ships, 61 goods and 20 upgrades from `data/*.json` | Yes |
+| `demo_prices.sql` | A small set of clearly-labelled fake prices | Optional |
+
+`seed.sql` and `demo_prices.sql` are **generated** — edit `scripts/gen-*.mjs`
+and run `npm run gen:sql`. A test fails if the committed SQL drifts from its
+generator, or from the copy embedded in the endpoint.
+
+All three are safe to run more than once: the schema creates objects only if
+absent, the seed upserts, and the demo data replaces only rows already flagged
+as demo.
 
 **Row-level security (RLS)** is the Postgres feature that checks a rule on
 every single row before anyone can read or write it. It matters here because
 the browser talks to the database directly using the publishable key, so the
 database itself — not the app — has to be the thing that says no.
 
-Each file ends with assertions. If a count is wrong the script raises an error
-and the whole thing rolls back, so a half-finished import cannot pass quietly.
-Look for a `Seed OK: …` or `Demo OK: …` notice to confirm success.
+## Two append-only tables
+
+`price_submissions` and `port_state_submissions` are never updated or deleted.
+Corrections are new rows. That is what makes the history usable for consensus
+weighting and outlier detection later, and it means nobody can quietly rewrite
+what someone else recorded.
+
+Each has a companion view that resolves the current answer:
+
+- `prices_current` — newest unflagged submission per (server, port, good)
+- `port_state_current` — newest value **per field**, so correcting a port's tax
+  does not erase a shallow-water limit somebody recorded last week
+
+Both drop demo rows for a port as soon as any real submission exists for it.
 
 ## Making yourself an admin
 
-Reference tables (ports, ships, goods, upgrades, servers) are read by everyone
-but written only by admins. Nobody is an admin until you say so. In the SQL
-Editor, once you have signed in to the app at least once:
+Reference tables are read by everyone but written only by admins, and nobody
+is an admin until you say so. In the Supabase SQL Editor, once you have signed
+in to the app at least once:
 
 ```sql
 insert into admins (user_id) values ('<your auth user uuid>');
 ```
 
-Find that uuid under Authentication → Users in the Supabase dashboard.
+Find that uuid under Authentication → Users.
 
 ## Checking RLS really works
 
-SPEC.md §3.2 asks for this to be verified rather than assumed. The automated
-test suite does it against a real Postgres instance on every push — see
-`src/test/rls.test.ts`. To check by hand, sign in as one user, create a ship
-preset, then sign in as a second user and try to read it. You should get zero
-rows, not an error.
+The test suite does it on every push against a real Postgres — see
+`src/test/rls.test.ts`, which includes the cross-account read SPEC.md §3.2
+asks for. The deployed site also probes it live from the browser.

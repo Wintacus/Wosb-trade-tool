@@ -20,13 +20,18 @@ known inputs than through a browser.
 
 ## Setting up the database
 
-Run the three files in [`supabase/`](supabase/) in order, in the Supabase SQL Editor. See
-[`supabase/README.md`](supabase/README.md) for the details. Each file checks its own row counts
-and stops rather than importing half the data.
+Open `/api/migrate` on the deployed site and type your Supabase database password. It creates
+every table, switches on row-level security, loads the reference data and demo prices, verifies
+the row counts, and shows you what it did. Nothing else to configure: the project is identified
+from `VITE_SUPABASE_URL`, and the right database host is found by trying each one.
 
-Once they have run, the deployed URL shows a live checklist of the setup: connection, all seven
-seed counts, whether a logged-out visitor can reach any private table, and whether any
-server-only key leaked into the browser bundle.
+It is safe to run again at any time.
+
+The site's front page then shows a live checklist of the same things from the browser:
+connection, all seven seed counts, whether a logged-out visitor can reach any private table, and
+whether any server-only key leaked into the browser bundle.
+
+See [`supabase/README.md`](supabase/README.md) for what the SQL actually contains.
 
 ## Repository layout
 
