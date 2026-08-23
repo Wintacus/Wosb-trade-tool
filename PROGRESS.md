@@ -46,14 +46,15 @@ Do not start until the checks on the live URL are green.
    `buy_price = null` and the expected answer is zero profitable goods in both directions.
 2. **Demo data** — small and hand-built, not a generated full grid.
 3. **Tax rounding** — tax rounds **up**, so quoted profit is never higher than reality.
-4. **Schema application** — the user pastes SQL into the Supabase SQL Editor by hand.
+4. **Schema application** — automated via `/api/migrate`. The user never pastes SQL.
 
 ## Things the next session should know
 
 - The user has **no local dev environment** — phone only. Never suggest running a command
   locally. Everything is verified at the live Vercel URL or in the GitHub Actions tab.
-- Claude sessions have **no Supabase credentials**. Do not try to connect. Schema changes ship
-  as SQL files for the user to run.
+- Claude sessions have **no Supabase credentials**, but that does NOT mean handing the user
+  SQL. `/api/migrate` runs on Vercel where `DATABASE_URL` lives, so schema changes are applied
+  by pushing and tapping the endpoint.
 - `supabase/seed.sql`, `supabase/demo_prices.sql` and `api/_sql.ts` are **generated**. Edit
   `scripts/gen-*.mjs` and run `npm run gen:sql`. Tests fail if any of them drifts.
 - `api/` is server-only: it reads `DATABASE_URL` and `ADMIN_TOKEN` and pulls in the Postgres
