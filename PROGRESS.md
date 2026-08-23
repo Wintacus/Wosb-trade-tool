@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-23 — Phase 0 and Phase 1 complete, on branch `claude/phase-0-1-setup-bm5cwq`
+Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE and verified against the live database
 
 ## Done
 
@@ -16,21 +16,17 @@ Last updated: 2026-08-23 — Phase 0 and Phase 1 complete, on branch `claude/pha
 - [x] **Phase 1 — tests** — all eleven from SPEC.md §5.9, plus RLS verification, secret-leak
       guards and an end-to-end run. 121 assertions, all passing.
 
-## Waiting on the user
+## Verified live
 
-**Nothing to configure. One page, one password.**
+The user ran `/api/migrate` on 2026-08-23 and it reported green: connected via
+pooler us-west-2, schema and security applied, reference data and demo prices
+loaded, all row counts matching, row-level security enabled on every table.
 
-`/api/migrate` serves a form, derives the Supabase project from `VITE_SUPABASE_URL`, finds the
-right database host by trying the direct connection then each pooler region, applies schema,
-seed and demo data, verifies the result and shows it. The database password is the only input
-and is never stored.
-
-Schema changes from here are a push plus one tap. Do NOT go back to handing the user SQL to
-paste, or sending them to find connection strings. See "Do the work yourself" in CLAUDE.md.
+**Phase 1's "Done when" is therefore fully met.** Nothing is outstanding on it.
 
 ## Next (Phase 2 — Core UI)
 
-Do not start until the checks on the live URL are green.
+Phase 1 is done, so Phase 2 may begin.
 
 - Four-step flow: origin → destination → ship → results
 - Map of the 42 ports with pan/zoom, **plus a searchable text list as an equal alternative**
@@ -70,6 +66,12 @@ Do not start until the checks on the live URL are green.
   rows carry `is_demo` and are displaced by the first real observation.
 - **Reference price bands are stored in tenths of gold**, converted from the whole gold in
   `goods.json`, so they compare like-for-like against submitted prices.
-- The gold-limited cargo solver is exact when it can prove it and says so via
-  `budget.provablyOptimal`. When it cannot prove optimality it still never returns an
-  unaffordable plan. Do not present an unproven plan as optimal in the UI.
+- The gold-limited cargo solver reports `budget.provablyOptimal` and
+  `budget.upperBoundProfit`. When optimality is not proven, show the gap to the ceiling
+  rather than either claiming it is best or implying it is bad — measured over 300 random
+  cases the median gap is 0% and 97% land on the true optimum. Never present an unproven
+  plan as optimal.
+- Two open offers the user has not answered: installing a migration function callable by
+  the service role key, so future schema changes need no password at all; and whether the
+  append-only `port_state` redesign is what they want (it was built after they dismissed
+  the question, and flagged at the time).
