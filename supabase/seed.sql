@@ -24,8 +24,8 @@ on conflict (id) do update set name = excluded.name;
 
 -- 42 ports. Coordinates are map pixels, meaningful only
 -- as relative distance. Tax, docking fee, min ship rate, owner and level are
--- deliberately NOT seeded: they live in port_state, change with every guild
--- capture, and are unknown until a player observes them.
+-- deliberately NOT seeded: they live in port_state_submissions, change with
+-- every guild capture, and are unknown until a player observes them.
 insert into ports (id, name, display_name, x, y, category) values
   ('assab', 'Assab', 'Assab', 97, 1211, 'k'),
   ('cursed_city', 'Cursed City', 'Cursed City', 101, 636, 'n'),

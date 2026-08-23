@@ -119,7 +119,7 @@ w('-- needs cleaning up.');
 w('--');
 w('-- To remove the demo data entirely:');
 w(`--   delete from price_submissions where is_demo and server_id = '${SERVER}';`);
-w(`--   delete from port_state where server_id = '${SERVER}';   -- see caveat below`);
+w(`--   delete from port_state_submissions where is_demo and server_id = '${SERVER}';`);
 w('-- =====================================================================');
 w();
 
@@ -129,29 +129,28 @@ w('--');
 w('-- CAVEAT, read before trusting these: the tax rates and shallow-water');
 w('-- limits below are real values observed in game and recorded in');
 w('-- data/ports.json. What was never recorded is WHICH SERVER they were seen');
-w(`-- on, so they are seeded for '${SERVER}' only and should be re-checked in game.`);
-w('-- port_state has no demo flag, so unlike the prices these rows are NOT');
-w('-- displaced automatically by real data -- correct them in the app instead.');
+w(`-- on, so they are seeded for '${SERVER}' only and may be wrong for yours.`);
+w('--');
+w('-- Because of that they ship as DEMO rows. The port_state_current view');
+w('-- drops a demo row for a port the moment anyone records a real observation');
+w('-- there, so a wrong seeded tax cannot outlive the first real sighting.');
 w('--');
 w('-- docking_fee stays null everywhere: it has never been observed at all.');
 w('-- Charleston deliberately gets no row, so the calculator has to say');
 w('-- "tax unknown" rather than assume a rate.');
 w('-- ---------------------------------------------------------------------');
-w('insert into port_state (port_id, server_id, tax_percent, docking_fee,');
-w('                        min_ship_rate, controlling_faction, port_level,');
-w('                        port_type, has_market) values');
+w(`delete from port_state_submissions where is_demo and server_id = ${str(SERVER)};`);
+w();
+w('insert into port_state_submissions');
+w('  (server_id, port_id, tax_percent, docking_fee, min_ship_rate,');
+w('   controlling_faction, port_level, port_type, has_market,');
+w('   submitted_by, source, is_demo, observed_at) values');
 w(
   PORT_STATE.map(
     ([portId, tax, fee, minRate, faction, level, type]) =>
-      `  (${str(portId)}, ${str(SERVER)}, ${num(tax)}, ${num(fee)}, ${num(minRate)}, ` +
-      `${str(faction)}, ${num(level)}, ${str(type)}, true)`,
-  ).join(',\n') +
-    '\non conflict (port_id, server_id) do update set\n' +
-    '  tax_percent = excluded.tax_percent, docking_fee = excluded.docking_fee,\n' +
-    '  min_ship_rate = excluded.min_ship_rate,\n' +
-    '  controlling_faction = excluded.controlling_faction,\n' +
-    '  port_level = excluded.port_level, port_type = excluded.port_type,\n' +
-    '  has_market = excluded.has_market, updated_at = now();',
+      `  (${str(SERVER)}, ${str(portId)}, ${num(tax)}, ${num(fee)}, ${num(minRate)}, ` +
+      `${str(faction)}, ${num(level)}, ${str(type)}, true, null, 'demo', true, now())`,
+  ).join(',\n') + ';',
 );
 w();
 
@@ -216,7 +215,12 @@ w(`  if n <> ${rows.length} then`);
 w(`    raise exception 'prices_current should expose all ${rows.length} demo rows, found %', n;`);
 w('  end if;');
 w();
-w(`  raise notice 'Demo OK: % price rows across % ports, all flagged as demo', ${rows.length}, ${TRADE_PORTS.length};`);
+w(`  select count(*) into n from port_state_current where is_demo and server_id = ${str(SERVER)};`);
+w(`  if n <> ${PORT_STATE.length} then`);
+w(`    raise exception 'port_state_current should expose ${PORT_STATE.length} demo port rows, found %', n;`);
+w('  end if;');
+w();
+w(`  raise notice 'Demo OK: % price rows and % port rows, all flagged as demo', ${rows.length}, ${PORT_STATE.length};`);
 w('end $demo_check$;');
 w();
 

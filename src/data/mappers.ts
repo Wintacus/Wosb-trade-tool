@@ -96,6 +96,8 @@ export function toPortState(row: Row): PortState {
     portLevel: toNumber(row.port_level),
     portType:
       row.port_type === 'city' || row.port_type === 'settlement' ? row.port_type : null,
+    // null means nobody has recorded whether there is a market, which is not
+    // the same as recording that there is none. Unknown defaults to usable.
     hasMarket: row.has_market !== false,
   };
 }

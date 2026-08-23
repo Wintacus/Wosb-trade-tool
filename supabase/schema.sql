@@ -103,7 +103,7 @@ create table if not exists upgrades (
   prevents_spoilage    boolean default false
 );
 
--- Ports: static identity here, per-server mutable state in port_state.
+-- Ports: static identity here, per-server observed state in port_state_submissions.
 create table if not exists ports (
   id           text primary key,
   name         text not null,
@@ -113,20 +113,91 @@ create table if not exists ports (
   category     text
 );
 
-create table if not exists port_state (
-  port_id             text references ports(id),
-  server_id           text references servers(id),
+-- Per-server port state -- APPEND ONLY, exactly like price_submissions.
+--
+-- SPEC.md 3.2 says corrections to shared data are new rows, never edits. An
+-- earlier draft made this one mutable row per (port, server), which broke that
+-- rule: whoever recorded a port's tax first owned it, and there was no history.
+-- Guild capture changes a port's owner and tax constantly, so history is the
+-- interesting part, not an overhead.
+--
+-- Every column except the port and server is nullable because every one of
+-- them is genuinely unknown until somebody observes it. A submission that
+-- records only the tax leaves the rest null, and the view below keeps the last
+-- known value of each field separately rather than blanking the others.
+create table if not exists port_state_submissions (
+  id                  bigserial primary key,
+  server_id           text not null references servers(id),
+  port_id             text not null references ports(id),
   tax_percent         numeric,   -- null = UNKNOWN. Do not default to 8.
   docking_fee         integer,   -- null = UNKNOWN, treated as 0. UNVERIFIED.
   min_ship_rate       integer,   -- e.g. 6 means only rates 6-7 may dock
   controlling_faction text,
   port_level          integer,
   port_type           text,      -- 'city' | 'settlement'
-  has_market          boolean not null default true,
-  updated_by          uuid references profiles(id),
-  updated_at          timestamptz not null default now(),
-  primary key (port_id, server_id)
+  has_market          boolean,   -- null = unobserved, not "no market"
+  submitted_by        uuid references profiles(id),   -- null for demo rows
+  source              text not null default 'manual', -- manual | ocr | demo
+  is_demo             boolean not null default false,
+  observed_at         timestamptz not null default now(),
+  flagged             boolean not null default false,
+  flag_reason         text
 );
+
+create index if not exists port_state_lookup_idx
+  on port_state_submissions (server_id, port_id, observed_at desc);
+
+-- The port state the calculator should actually use.
+--
+-- Each FIELD is resolved independently: the newest submission that actually
+-- recorded a value for it wins. That matters because someone correcting a
+-- port's tax should not wipe out a shallow-water limit another player recorded
+-- last week, which a plain "newest row wins" rule would do.
+--
+-- Demo rows follow the same rule as prices: ignored for a port as soon as any
+-- real submission exists for it.
+--
+-- array_agg with `(field is null)` first in the ordering puts rows that have a
+-- value ahead of rows that do not, then takes the newest of those.
+drop view if exists port_state_current;
+create view port_state_current with (security_invoker = true) as
+with live as (
+  select
+    ps.*,
+    exists (
+      select 1 from port_state_submissions r
+      where r.server_id = ps.server_id
+        and r.port_id   = ps.port_id
+        and not r.is_demo
+        and not r.flagged
+    ) as real_exists
+  from port_state_submissions ps
+  where not ps.flagged
+)
+select
+  server_id,
+  port_id,
+  (array_agg(tax_percent order by (tax_percent is null), observed_at desc))[1]
+    as tax_percent,
+  (array_agg(docking_fee order by (docking_fee is null), observed_at desc))[1]
+    as docking_fee,
+  (array_agg(min_ship_rate order by (min_ship_rate is null), observed_at desc))[1]
+    as min_ship_rate,
+  (array_agg(controlling_faction order by (controlling_faction is null), observed_at desc))[1]
+    as controlling_faction,
+  (array_agg(port_level order by (port_level is null), observed_at desc))[1]
+    as port_level,
+  (array_agg(port_type order by (port_type is null), observed_at desc))[1]
+    as port_type,
+  (array_agg(has_market order by (has_market is null), observed_at desc))[1]
+    as has_market,
+  max(observed_at) as observed_at,
+  -- Demo rows are dropped entirely once a real one exists, so a port is
+  -- either all demo or all real here.
+  bool_or(is_demo) as is_demo
+from live
+where not is_demo or not real_exists
+group by server_id, port_id;
 
 -- ---------------------------------------------------------------------
 -- Price submissions -- APPEND ONLY
@@ -249,7 +320,7 @@ alter table goods             enable row level security;
 alter table ships             enable row level security;
 alter table upgrades          enable row level security;
 alter table ports             enable row level security;
-alter table port_state        enable row level security;
+alter table port_state_submissions enable row level security;
 alter table price_submissions enable row level security;
 alter table ship_presets      enable row level security;
 alter table saved_routes      enable row level security;
@@ -341,30 +412,57 @@ create trigger price_submissions_flag_only_trg
   for each row execute function public.price_submissions_flag_only();
 
 -- ---------------------------------------------------------------------
--- port_state: shared, user-correctable world state.
+-- port_state_submissions: shared world state, append-only.
 --
--- DEVIATION FROM SPEC.md 3.2, flagged deliberately rather than hidden.
--- The spec groups port_state with price_submissions as insert-only. But
--- port_state has one row per (port, server) and ships as all-nulls, so
--- insert-only would let the first person to touch a port set its tax
--- forever with no way to correct it. Since tax rates and port ownership
--- change with every guild capture, updates have to be allowed for the
--- table to work at all.
---
--- If you would rather lock this down, change `to authenticated` to
--- `using (public.is_admin())` on the update policy below.
+-- Same rules as price_submissions, for the same reason. Anyone logged in may
+-- record what they saw at a port; nobody edits or deletes what anyone else
+-- recorded. Guild capture changes port ownership and tax constantly, so the
+-- history of who saw what and when is the valuable part.
 -- ---------------------------------------------------------------------
-drop policy if exists port_state_read_all      on port_state;
-drop policy if exists port_state_insert_authed on port_state;
-drop policy if exists port_state_update_authed on port_state;
+drop policy if exists port_state_read_all      on port_state_submissions;
+drop policy if exists port_state_insert_authed on port_state_submissions;
+drop policy if exists port_state_flag_admin    on port_state_submissions;
 
-create policy port_state_read_all on port_state
+create policy port_state_read_all on port_state_submissions
   for select using (true);
-create policy port_state_insert_authed on port_state
-  for insert to authenticated with check (updated_by = auth.uid());
-create policy port_state_update_authed on port_state
+
+-- submitted_by must be the caller, and nobody may pass their own observation
+-- off as seeded demo data.
+create policy port_state_insert_authed on port_state_submissions
+  for insert to authenticated
+  with check (submitted_by = auth.uid() and is_demo = false and source <> 'demo');
+
+create policy port_state_flag_admin on port_state_submissions
   for update to authenticated
-  using (true) with check (updated_by = auth.uid());
+  using (public.is_admin()) with check (public.is_admin());
+
+-- No delete policy: the table cannot be deleted from through the API.
+
+create or replace function public.port_state_flag_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (new.id, new.server_id, new.port_id, new.tax_percent, new.docking_fee,
+      new.min_ship_rate, new.controlling_faction, new.port_level,
+      new.port_type, new.has_market, new.submitted_by, new.source,
+      new.is_demo, new.observed_at)
+     is distinct from
+     (old.id, old.server_id, old.port_id, old.tax_percent, old.docking_fee,
+      old.min_ship_rate, old.controlling_faction, old.port_level,
+      old.port_type, old.has_market, old.submitted_by, old.source,
+      old.is_demo, old.observed_at)
+  then
+    raise exception
+      'port_state_submissions is append-only; only flagged/flag_reason may be updated';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists port_state_flag_only_trg on port_state_submissions;
+create trigger port_state_flag_only_trg
+  before update on port_state_submissions
+  for each row execute function public.port_state_flag_only();
 
 -- ---------------------------------------------------------------------
 -- ship_presets and saved_routes: own rows only.
@@ -421,7 +519,8 @@ revoke all on all sequences in schema public from anon, authenticated;
 grant usage on schema public to anon, authenticated;
 
 -- Public reads: reference data, plus the shared community data.
-grant select on servers, goods, ships, upgrades, ports, port_state,
+grant select on servers, goods, ships, upgrades, ports,
+                port_state_submissions, port_state_current,
                 price_submissions, seasons, prices_current
   to anon, authenticated;
 
@@ -433,7 +532,7 @@ grant insert, update, delete on servers, goods, ships, upgrades, ports
 -- Community data. update on price_submissions is narrowed to admins by
 -- policy, and further narrowed to the flag columns by the trigger.
 grant insert, update on price_submissions to authenticated;
-grant insert, update on port_state to authenticated;
+grant insert, update on port_state_submissions to authenticated;
 
 -- OCR corrections: anyone logged in may add one; the select policy means
 -- only admins actually get rows back.

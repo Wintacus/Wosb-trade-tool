@@ -82,8 +82,8 @@ w();
 // ---------------------------------------------------------------------
 w(`-- ${portsFile.ports.length} ports. Coordinates are map pixels, meaningful only`);
 w('-- as relative distance. Tax, docking fee, min ship rate, owner and level are');
-w('-- deliberately NOT seeded: they live in port_state, change with every guild');
-w('-- capture, and are unknown until a player observes them.');
+w('-- deliberately NOT seeded: they live in port_state_submissions, change with');
+w('-- every guild capture, and are unknown until a player observes them.');
 w('insert into ports (id, name, display_name, x, y, category) values');
 w(
   portsFile.ports

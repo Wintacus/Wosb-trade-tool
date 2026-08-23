@@ -43,7 +43,7 @@ beforeAll(async () => {
     toCurrentPrice,
   );
   portStates = new Map(
-    (await rows('select * from port_state where server_id = $1', [SERVER])).map((r) => {
+    (await rows('select * from port_state_current where server_id = $1', [SERVER])).map((r) => {
       const state = toPortState(r);
       return [state.portId, state];
     }),

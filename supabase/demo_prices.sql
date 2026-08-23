@@ -13,7 +13,7 @@
 --
 -- To remove the demo data entirely:
 --   delete from price_submissions where is_demo and server_id = 'na';
---   delete from port_state where server_id = 'na';   -- see caveat below
+--   delete from port_state_submissions where is_demo and server_id = 'na';
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -22,27 +22,26 @@
 -- CAVEAT, read before trusting these: the tax rates and shallow-water
 -- limits below are real values observed in game and recorded in
 -- data/ports.json. What was never recorded is WHICH SERVER they were seen
--- on, so they are seeded for 'na' only and should be re-checked in game.
--- port_state has no demo flag, so unlike the prices these rows are NOT
--- displaced automatically by real data -- correct them in the app instead.
+-- on, so they are seeded for 'na' only and may be wrong for yours.
+--
+-- Because of that they ship as DEMO rows. The port_state_current view
+-- drops a demo row for a port the moment anyone records a real observation
+-- there, so a wrong seeded tax cannot outlive the first real sighting.
 --
 -- docking_fee stays null everywhere: it has never been observed at all.
 -- Charleston deliberately gets no row, so the calculator has to say
 -- "tax unknown" rather than assume a rate.
 -- ---------------------------------------------------------------------
-insert into port_state (port_id, server_id, tax_percent, docking_fee,
-                        min_ship_rate, controlling_faction, port_level,
-                        port_type, has_market) values
-  ('st_john', 'na', 12, null, null, null, null, 'settlement', true),
-  ('bord_radel', 'na', 8, null, null, 'antilia', null, null, true),
-  ('fiji', 'na', 8, null, 6, 'espaniol', null, 'city', true),
-  ('los_catuano', 'na', 8, null, 6, 'espaniol', null, null, true)
-on conflict (port_id, server_id) do update set
-  tax_percent = excluded.tax_percent, docking_fee = excluded.docking_fee,
-  min_ship_rate = excluded.min_ship_rate,
-  controlling_faction = excluded.controlling_faction,
-  port_level = excluded.port_level, port_type = excluded.port_type,
-  has_market = excluded.has_market, updated_at = now();
+delete from port_state_submissions where is_demo and server_id = 'na';
+
+insert into port_state_submissions
+  (server_id, port_id, tax_percent, docking_fee, min_ship_rate,
+   controlling_faction, port_level, port_type, has_market,
+   submitted_by, source, is_demo, observed_at) values
+  ('na', 'st_john', 12, null, null, null, null, 'settlement', true, null, 'demo', true, now()),
+  ('na', 'bord_radel', 8, null, null, 'antilia', null, null, true, null, 'demo', true, now()),
+  ('na', 'fiji', 8, null, 6, 'espaniol', null, 'city', true, null, 'demo', true, now()),
+  ('na', 'los_catuano', 8, null, 6, 'espaniol', null, null, true, null, 'demo', true, now());
 
 -- ---------------------------------------------------------------------
 -- Prices. Clearing demo rows first keeps this file re-runnable without
@@ -190,5 +189,10 @@ begin
     raise exception 'prices_current should expose all 115 demo rows, found %', n;
   end if;
 
-  raise notice 'Demo OK: % price rows across % ports, all flagged as demo', 115, 5;
+  select count(*) into n from port_state_current where is_demo and server_id = 'na';
+  if n <> 4 then
+    raise exception 'port_state_current should expose 4 demo port rows, found %', n;
+  end if;
+
+  raise notice 'Demo OK: % price rows and % port rows, all flagged as demo', 115, 4;
 end $demo_check$;

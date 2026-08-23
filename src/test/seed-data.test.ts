@@ -75,7 +75,8 @@ describe('seed data is structurally sound', () => {
   });
 
   test('no port ships with a tax rate or docking fee baked in', () => {
-    // These change constantly and belong in port_state, filled by players.
+    // These change constantly and belong in port_state_submissions, recorded
+    // by players as they see them.
     // A hardcoded tax rate is a bug waiting to happen.
     for (const port of ports.ports) {
       expect(port).not.toHaveProperty('taxPercent');
