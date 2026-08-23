@@ -403,21 +403,48 @@ create policy ocr_corrections_insert_authed on ocr_corrections
   for insert to authenticated with check (true);
 
 -- ---------------------------------------------------------------------
--- Grants. RLS decides which ROWS; grants decide which TABLES are visible
--- at all. Both are needed.
+-- Grants.
+--
+-- Grants and RLS are two different gates and BOTH have to be open. A grant
+-- decides whether a role may touch a table at all; RLS then decides which
+-- rows. A missing grant shows up as "permission denied", a failing policy
+-- as zero rows.
+--
+-- Everything is revoked first and then granted back explicitly. Supabase
+-- adds default privileges to new tables in `public`, so without the revoke
+-- this schema would inherit whatever those defaults happen to be rather
+-- than saying what it means.
 -- ---------------------------------------------------------------------
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+
 grant usage on schema public to anon, authenticated;
 
+-- Public reads: reference data, plus the shared community data.
 grant select on servers, goods, ships, upgrades, ports, port_state,
                 price_submissions, seasons, prices_current
   to anon, authenticated;
 
-grant insert on price_submissions, ocr_corrections to authenticated;
+-- Reference tables: the grant opens the door for logged-in users, and the
+-- admin-only policies above are what actually keep non-admins out.
+grant insert, update, delete on servers, goods, ships, upgrades, ports
+  to authenticated;
+
+-- Community data. update on price_submissions is narrowed to admins by
+-- policy, and further narrowed to the flag columns by the trigger.
+grant insert, update on price_submissions to authenticated;
 grant insert, update on port_state to authenticated;
-grant update on price_submissions to authenticated;   -- narrowed by policy + trigger
+
+-- OCR corrections: anyone logged in may add one; the select policy means
+-- only admins actually get rows back.
+grant select, insert on ocr_corrections to authenticated;
+
+-- Per-user data. Policies restrict every one of these to the owner's rows.
 grant select, insert, update, delete on profiles, ship_presets, saved_routes
   to authenticated;
-grant all on seasons to authenticated;
+grant select, insert, update, delete on seasons to authenticated;
+
+-- Needed for the bigserial id columns on inserts.
 grant usage, select on all sequences in schema public to authenticated;
 
 -- admins is reachable by nobody but the service role and the SQL Editor.

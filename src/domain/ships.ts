@@ -48,8 +48,21 @@ export function effectiveShipStats(ship: Ship, upgrades: readonly Upgrade[] = []
     slotsFlat += u.upgradeSlotsFlat;
   }
 
-  const applyModifiers = (base: number, flat: number, percent: number): number =>
-    (base + flat) * (1 + percent / 100);
+  /**
+   * Percentages are applied through integer basis points rather than
+   * `1 + percent/100`, because the naive form leaves binary floating-point
+   * dust: 11000 * 1.12 comes out as 12320.000000000002, and flooring that for
+   * cargo capacity can silently cost a unit of hold.
+   *
+   * When there is no percentage to apply the base is returned untouched, so a
+   * ship with no upgrades reports exactly the stats on its card.
+   */
+  const applyModifiers = (base: number, flat: number, percent: number): number => {
+    const withFlat = base + flat;
+    const percentBp = Math.round(percent * 100);
+    if (percentBp === 0) return withFlat;
+    return (withFlat * (10_000 + percentBp)) / 10_000;
+  };
 
   return {
     hold: applyModifiers(ship.hold, holdFlat, holdPercent),
@@ -71,5 +84,8 @@ export function effectiveShipStats(ship: Ship, upgrades: readonly Upgrade[] = []
  * upgrade rounds down — claiming the extra fraction would overstate what fits.
  */
 export function usableHold(stats: EffectiveShipStats): number {
-  return Math.max(0, Math.floor(stats.hold));
+  // Round away any last speck of floating-point dust before flooring, so a
+  // capacity that is really 12320 can never be read as 12319.
+  const settled = Math.round(stats.hold * 1e6) / 1e6;
+  return Math.max(0, Math.floor(settled));
 }
