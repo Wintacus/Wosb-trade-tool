@@ -10,6 +10,7 @@ Read this before doing anything in this repo.
 - **Verifies work at a live URL.** Every change must be pushed and auto-deployed to Vercel. If it isn't visible at the deployed URL, it doesn't exist.
 - **Wants plain language.** Define technical terms the first time they appear — RLS, upsert, knapsack, EXIF, whatever. Don't assume familiarity, don't over-explain twice.
 - **Wants honesty over agreeableness.** If an approach is wrong, say so directly. Flag concerns rather than quietly working around them. Never present a guess with confidence — if you're unsure, say you're unsure.
+- **Wants short answers.** Be concise in every reply. Lead with the result, then anything they must act on, then caveats — briefly. No recaps of work they just watched, no restating a commit message in prose. Length is not thoroughness. This applies to chat only: code comments, commit messages and PR bodies stay as detailed as they need to be.
 
 ## Ask before assuming
 
@@ -66,6 +67,7 @@ OCR is an accelerator. If OCR is broken, removed, or never finished, the app mus
 
 ## Architecture reminders
 
+- **Schema changes apply on deploy.** The Vercel build runs `scripts/apply-migrations.mjs`, so pushing is the whole workflow. Never ask the user to run SQL, tap an endpoint, or enter the database password for a schema change. Edit `supabase/schema.sql` for new objects; add a file to `supabase/migrations/` to alter something that already exists.
 - **Servers are separate economies.** Every price and port-state row is scoped by `server_id`. Mixing NA and EU data produces garbage.
 - **Ship rate gates ports both ways.** A ship must satisfy `min_ship_rate` to both depart and arrive.
 - **Hold weight is the only cargo constraint.** There is no cargo-slot limit — that was an early wrong assumption, disproven by in-game ship cards.
