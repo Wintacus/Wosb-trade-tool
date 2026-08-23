@@ -17,7 +17,17 @@ because they are embedded into that endpoint at build time.
 and run `npm run gen:sql`. A test fails if the committed SQL drifts from its
 generator, or from the copy embedded in the endpoint.
 
-## Later schema changes need no password
+## Later schema changes need nothing at all
+
+Once the bootstrap below has run once, every schema change applies **during the
+Vercel build**. Push, and the deployment brings the database with it. Nothing to
+tap, no password, no waiting.
+
+A database problem does not fail the build: a deployment should not be blocked
+for someone working from a phone. The site's status page reports the drift, and
+`/api/migrate?auto=1` retries on demand.
+
+## Why the bootstrap needs the password once
 
 The first setup needs the database password to bootstrap. After that the
 database carries an `apply_migration` function that only the service role key
