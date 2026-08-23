@@ -275,6 +275,19 @@ export function planRoute(input: RouteInput): RouteResult {
       });
       continue;
     }
+    // The database refuses negative prices, but the calculator must not
+    // produce a wrong answer if it is ever handed one another way: a negative
+    // cost reads as free money to the arithmetic below, which would invent
+    // profit out of nothing.
+    if (buyRow.buyPrice < 0 || sellRow.sellPrice < 0) {
+      excluded.push({
+        goodId: good.id,
+        goodName: good.name,
+        reason: 'no_price_data',
+        message: `${good.name} has a negative price recorded, which cannot be right.`,
+      });
+      continue;
+    }
     if (good.weight <= 0 || !Number.isInteger(good.weight)) {
       excluded.push({
         goodId: good.id,
