@@ -18,14 +18,15 @@ Last updated: 2026-08-23 — Phase 0 and Phase 1 complete, on branch `claude/pha
 
 ## Waiting on the user
 
-**One-time setup only: two env vars in Vercel, then everything is automated.**
+**Nothing to configure. One page, one password.**
 
-`/api/migrate` applies schema, seed and demo data and verifies the result, so schema changes
-never need pasting again. It needs `DATABASE_URL` (Supabase connection string) and
-`ADMIN_TOKEN` set in Vercel. Once they exist, tapping the endpoint does the whole job, and
-future schema work is just a push.
+`/api/migrate` serves a form, derives the Supabase project from `VITE_SUPABASE_URL`, finds the
+right database host by trying the direct connection then each pooler region, applies schema,
+seed and demo data, verifies the result and shows it. The database password is the only input
+and is never stored.
 
-Do NOT go back to handing the user SQL to paste. See "Do the work yourself" in CLAUDE.md.
+Schema changes from here are a push plus one tap. Do NOT go back to handing the user SQL to
+paste, or sending them to find connection strings. See "Do the work yourself" in CLAUDE.md.
 
 ## Next (Phase 2 — Core UI)
 
@@ -46,7 +47,8 @@ Do not start until the checks on the live URL are green.
    `buy_price = null` and the expected answer is zero profitable goods in both directions.
 2. **Demo data** — small and hand-built, not a generated full grid.
 3. **Tax rounding** — tax rounds **up**, so quoted profit is never higher than reality.
-4. **Schema application** — automated via `/api/migrate`. The user never pastes SQL.
+4. **Schema application** — automated via `/api/migrate`. The user never pastes SQL,
+   never copies a connection string, and sets no environment variables for it.
 
 ## Things the next session should know
 
