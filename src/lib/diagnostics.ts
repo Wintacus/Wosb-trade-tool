@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from './supabase';
+import { expectedMigrations } from './migrations.generated';
 
 /**
  * Live checks for the Phase 1 "Done when" criteria.
@@ -91,6 +92,98 @@ function checkNoSecretsInBundle(): Check {
       };
 }
 
+/** What `schema_state()` returns. Validated rather than trusted. */
+interface SchemaState {
+  auto_migrations_ready: boolean;
+  applied_count: number;
+  applied: { name: string; applied_at: string }[];
+}
+
+const SETUP_URL = '/api/migrate';
+
+/**
+ * Is the database actually current, and is it able to update itself?
+ *
+ * Every other check here proves the database was set up correctly ONCE. None
+ * of them notice it falling behind afterwards, which is the failure that
+ * actually happens: `scripts/apply-migrations.mjs` deliberately never fails a
+ * build, so a dead migration path looks exactly like a normal deployment.
+ *
+ * Three distinct failures, kept separate because the fix differs for each:
+ * the reporting function is missing entirely, the migration function it looks
+ * for is missing, or both exist and some migrations simply have not run.
+ */
+async function checkSchemaState(): Promise<Check> {
+  const label = 'Database is up to date';
+  const { data, error } = await supabase!.rpc('schema_state');
+
+  if (error) {
+    // Almost always PGRST202: the function is not in the database. Since it
+    // ships in the same file as apply_migration, its absence means the schema
+    // has not been re-applied since this check was written.
+    return {
+      id: 'schema-state',
+      label,
+      status: 'fail',
+      detail:
+        `The database could not report its own state (${error.message}). That ` +
+        'usually means the schema has not been re-applied since this check was ' +
+        `added, so automatic updates are not running. Open ${SETUP_URL} once and ` +
+        'enter the database password to repair it.',
+    };
+  }
+
+  const state = data as SchemaState | null;
+  if (!state || typeof state.auto_migrations_ready !== 'boolean') {
+    return {
+      id: 'schema-state',
+      label,
+      status: 'fail',
+      detail: 'The database returned an answer in a shape this check did not expect.',
+    };
+  }
+
+  if (!state.auto_migrations_ready) {
+    return {
+      id: 'schema-state',
+      label,
+      status: 'fail',
+      detail:
+        'The apply_migration function is missing, so schema changes will NOT ' +
+        'apply when the site deploys. Creating a function needs the database ' +
+        `password, which is the one thing a deploy does not have. Open ${SETUP_URL} ` +
+        'once and enter it; after that this repairs itself on every deploy.',
+    };
+  }
+
+  const applied = new Set(state.applied.map((row) => row.name));
+  const missing = expectedMigrations.filter((name) => !applied.has(name));
+
+  if (missing.length > 0) {
+    return {
+      id: 'schema-state',
+      label,
+      status: 'fail',
+      detail:
+        `Behind by ${missing.length} of ${expectedMigrations.length}: ` +
+        `${missing.join(', ')}. The automatic path is working, so the next ` +
+        `deployment should apply these. If it does not, open ${SETUP_URL}?auto=1 ` +
+        'to run them now and see the reason if it fails.',
+    };
+  }
+
+  return {
+    id: 'schema-state',
+    label,
+    status: 'pass',
+    detail:
+      expectedMigrations.length === 0
+        ? 'Automatic updates are working. No migrations to apply yet.'
+        : `Automatic updates are working. All ${expectedMigrations.length} ` +
+          `migration${expectedMigrations.length === 1 ? '' : 's'} applied.`,
+  };
+}
+
 export async function runDiagnostics(): Promise<Check[]> {
   const checks: Check[] = [checkNoSecretsInBundle()];
 
@@ -128,6 +221,11 @@ export async function runDiagnostics(): Promise<Check[]> {
     status: 'pass',
     detail: 'Connected with the publishable key.',
   });
+
+  // --- Is the schema current, and can it update itself? -----------------
+  // Placed before the row counts on purpose: if the database is behind, the
+  // counts below can all pass while the schema is still missing constraints.
+  checks.push(await checkSchemaState());
 
   // --- Seed counts ------------------------------------------------------
   for (const { table, label, expected, filter } of EXPECTED_COUNTS) {

@@ -14,6 +14,10 @@ const state = {
   counts: new Map<string, number>(),
   errors: new Map<string, string>(),
   privateRows: new Map<string, unknown[]>(),
+  // What schema_state() reports back, and the error when it cannot be called
+  // at all -- which is what a database missing the function actually does.
+  schemaState: null as unknown,
+  rpcError: null as string | null,
 };
 
 vi.mock('../lib/supabase', () => {
@@ -56,11 +60,37 @@ vi.mock('../lib/supabase', () => {
 
   return {
     supabaseConfigured: true,
-    supabase: { from: (table: string) => builder(table) },
+    supabase: {
+      from: (table: string) => builder(table),
+      rpc: (_name: string) =>
+        Promise.resolve({
+          data: state.schemaState,
+          error: state.rpcError ? { message: state.rpcError } : null,
+        }),
+    },
   };
 });
 
 const { runDiagnostics } = await import('../lib/diagnostics');
+const { expectedMigrations } = await import('../lib/migrations.generated');
+
+/** A database that is fully current: function present, every migration run. */
+function currentSchemaState(): unknown {
+  return {
+    auto_migrations_ready: true,
+    applied_count: expectedMigrations.length,
+    applied: expectedMigrations.map((name) => ({
+      name,
+      applied_at: '2026-08-23T00:00:00Z',
+    })),
+  };
+}
+
+function schemaCheck(checks: { id: string }[]): { status: string; detail: string } {
+  const found = checks.find((c) => c.id === 'schema-state');
+  if (!found) throw new Error('the schema-state check did not run at all');
+  return found as { id: string; status: string; detail: string };
+}
 
 function seedHealthy(): void {
   state.counts.clear();
@@ -75,6 +105,8 @@ function seedHealthy(): void {
   state.counts.set('upgrades', 20);
   state.counts.set('prices_current', 115);
   state.counts.set('port_state_current', 4);
+  state.schemaState = currentSchemaState();
+  state.rpcError = null;
 }
 
 beforeEach(seedHealthy);
@@ -172,5 +204,74 @@ describe('the secret check', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-not-leaked';
     const checks = await runDiagnostics();
     expect(checks.find((c) => c.id === 'secrets')!.status).toBe('pass');
+  });
+});
+
+describe('the database-is-current check', () => {
+  /**
+   * Every other check on this page proves the database was set up correctly
+   * ONCE. None of them notice it drifting behind afterwards, and drifting is
+   * the failure that actually happened: the build step never fails a
+   * deployment on purpose, so a dead migration path looks exactly like a
+   * normal deploy. This check is the only thing standing between that and a
+   * silently stale database.
+   */
+
+  test('a current database passes and says so plainly', async () => {
+    const check = schemaCheck(await runDiagnostics());
+    expect(check.status).toBe('pass');
+    expect(check.detail).toMatch(/automatic updates are working/i);
+  });
+
+  test('a missing reporting function fails and points at the repair', async () => {
+    // PostgREST answers PGRST202 when the function is not there. Because
+    // schema_state ships in the same file as apply_migration, this means the
+    // schema has not been re-applied -- so automatic updates are not running.
+    state.rpcError = 'Could not find the function public.schema_state';
+    state.schemaState = null;
+    const check = schemaCheck(await runDiagnostics());
+    expect(check.status).toBe('fail');
+    expect(check.detail).toContain('/api/migrate');
+  });
+
+  test('a missing apply_migration is called out as needing the password', async () => {
+    // The distinct case worth separating: the database can report on itself,
+    // but cannot change itself. Only the password fixes this one.
+    state.schemaState = { auto_migrations_ready: false, applied_count: 0, applied: [] };
+    const check = schemaCheck(await runDiagnostics());
+    expect(check.status).toBe('fail');
+    expect(check.detail).toMatch(/password/i);
+    expect(check.detail).toContain('/api/migrate');
+  });
+
+  test('an unapplied migration is named, not just counted', async () => {
+    // "1 migration behind" sends someone hunting. The filename does not.
+    state.schemaState = {
+      auto_migrations_ready: true,
+      applied_count: 0,
+      applied: [],
+    };
+    const check = schemaCheck(await runDiagnostics());
+    expect(check.status).toBe('fail');
+    for (const name of expectedMigrations) {
+      expect(check.detail).toContain(name);
+    }
+  });
+
+  test('healthy row counts do not mask a database that is behind', async () => {
+    // The exact trap this check exists for. Every count below can be correct
+    // while the schema is still missing the constraints a migration adds, so
+    // the two must not be able to cover for each other.
+    state.schemaState = { auto_migrations_ready: true, applied_count: 0, applied: [] };
+    const checks = await runDiagnostics();
+    expect(checks.filter((c) => c.id.startsWith('count-')).every((c) => c.status === 'pass')).toBe(
+      true,
+    );
+    expect(schemaCheck(checks).status).toBe('fail');
+  });
+
+  test('a nonsense answer is a failure, not a pass', async () => {
+    state.schemaState = { something: 'unexpected' };
+    expect(schemaCheck(await runDiagnostics()).status).toBe('fail');
   });
 });

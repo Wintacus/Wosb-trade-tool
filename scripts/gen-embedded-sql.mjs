@@ -78,7 +78,32 @@ ${migrationsLiteral}
 mkdirSync(join(root, 'api'), { recursive: true });
 writeFileSync(join(root, 'api', '_sql.ts'), output, 'utf8');
 
+// The status page has to know which migrations SHOULD be applied before it can
+// call the database behind. It cannot read the list above: api/_sql.ts carries
+// every byte of the SQL and imports server-only code, and a test fails if
+// anything under src/ imports api/ -- which is what stops all of that being
+// bundled into the browser. So the NAMES alone are emitted separately here.
+// No SQL, no checksums: this second file does reach the browser.
+const clientOutput = `/**
+ * GENERATED FILE. Do not edit by hand: run \`npm run gen:sql\`.
+ *
+ * Migration names only, for the status page to compare against what the
+ * database reports through schema_state(). The SQL and the checksums are
+ * deliberately left out: this file is bundled into the browser.
+ */
+
+export const expectedMigrations: string[] = [
+${migrations.map((m) => `  '${m.name}',`).join('\n')}
+];
+`;
+
+mkdirSync(join(root, 'src', 'lib'), { recursive: true });
+writeFileSync(join(root, 'src', 'lib', 'migrations.generated.ts'), clientOutput, 'utf8');
+
 console.log(
   `Wrote api/_sql.ts: embedded ${FILES.join(', ')}` +
-    ` plus ${migrations.length} migration${migrations.length === 1 ? '' : 's'}.`,
+    ` plus ${migrations.length} migration${migrations.length === 1 ? '' : 's'}.\n` +
+    `Wrote src/lib/migrations.generated.ts: ${migrations.length} migration name${
+      migrations.length === 1 ? '' : 's'
+    }, no SQL.`,
 );

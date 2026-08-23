@@ -385,6 +385,66 @@ begin
   end if;
 end $sm_grant$;
 
+-- ---------------------------------------------------------------------
+-- schema_state(): is the database actually up to date?
+--
+-- The status page had no way to answer this. It could prove the tables and
+-- seed rows exist, but not whether the automatic migration path is alive or
+-- which migrations have landed -- and those are exactly what silently stop
+-- working. `scripts/apply-migrations.mjs` never fails a build on purpose, so
+-- a broken migration path looks like a perfectly normal deployment.
+--
+-- security definer because `schema_migrations` deliberately has no policies
+-- and is unreadable from a browser. This exposes migration NAMES and times
+-- only, never their SQL and never the checksums. The schema is a public file
+-- in a public repository, so the names give nothing away; being able to see
+-- that the database is behind is worth considerably more.
+--
+-- Note what its ABSENCE means. This function ships in the same file as
+-- apply_migration, so if the status page reports it missing, the schema has
+-- not been re-applied since this was written -- which is itself the answer.
+-- ---------------------------------------------------------------------
+create or replace function public.schema_state()
+returns json
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select json_build_object(
+    'auto_migrations_ready',
+    exists (
+      select 1 from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'apply_migration'
+    ),
+    'applied_count', (select count(*) from schema_migrations),
+    'applied', coalesce(
+      (
+        select json_agg(json_build_object('name', name, 'applied_at', applied_at)
+                        order by name)
+        from schema_migrations
+      ),
+      '[]'::json
+    )
+  );
+$$;
+
+-- Readable by everyone: it reports state, changes nothing, and the status page
+-- runs in the browser with the publishable key.
+do $ss_grant$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'grant execute on function public.schema_state() to anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'grant execute on function public.schema_state() to authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.schema_state() to service_role';
+  end if;
+end $ss_grant$;
+
 -- =====================================================================
 -- Row level security
 --

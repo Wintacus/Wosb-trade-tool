@@ -79,13 +79,17 @@ Phase 1 is done, so Phase 2 may begin.
 - The user has **no local dev environment** — phone only. Never suggest running a command
   locally. Everything is verified at the live Vercel URL or in the GitHub Actions tab.
 - Claude sessions have **no Supabase credentials**, but that does NOT mean handing the user
-  SQL. `/api/migrate` runs on Vercel where `DATABASE_URL` lives, so schema changes are applied
-  by pushing and tapping the endpoint.
+  SQL. Schema changes apply during the Vercel build: `scripts/apply-migrations.mjs` runs
+  `applyPendingChanges()` from `api/_auto.ts`, which calls the database's `apply_migration`
+  function using `SUPABASE_SERVICE_ROLE_KEY`. Pushing is the whole workflow.
+  **There is no `DATABASE_URL` anywhere in this project.** `api/migrate.ts` asks for the
+  password in a form and uses it for that one request only; nothing stores it. Two earlier
+  lines here claimed a `DATABASE_URL` env var existed and were simply wrong.
 - `supabase/seed.sql`, `supabase/demo_prices.sql` and `api/_sql.ts` are **generated**. Edit
   `scripts/gen-*.mjs` and run `npm run gen:sql`. Tests fail if any of them drifts.
-- `api/` is server-only: it reads `DATABASE_URL` and `ADMIN_TOKEN` and pulls in the Postgres
+- `api/` is server-only: it reads `SUPABASE_SERVICE_ROLE_KEY` and pulls in the Postgres
   driver. A test fails if anything under `src/` imports it, which would bundle all of that
-  into the browser.
+  into the browser. (It does **not** read `ADMIN_TOKEN` — that was another stale claim here.)
 - Tests run the **real** `schema.sql` inside PGlite (Postgres compiled to WebAssembly), so a
   broken SQL file fails CI rather than surprising the user in the dashboard.
 - **There is no longer any deviation from SPEC.md §3.2.** `port_state_submissions` is
@@ -101,11 +105,19 @@ Phase 1 is done, so Phase 2 may begin.
   plan as optimal.
 - Both once-open questions are settled: the append-only `port_state` redesign is approved
   and merged, and the migration function is wired up.
-- **The one remaining user step, ever:** open `/api/migrate` once and enter the database
-  password. That installs `apply_migration`, which cannot be created any other way — no
-  credential except the database password can run DDL. After that, schema changes apply
-  during the Vercel build automatically: push and the database follows. Do not ask the user
-  to tap anything for a schema change.
+- **The password bootstrap — believed done, and now self-reporting.** The user entered the
+  database password at `/api/migrate` on 2026-08-23 to install `apply_migration`, which
+  cannot be created any other way: no credential except the password runs DDL. An earlier
+  run went green at 16:19, but `apply_migration` was only written into the schema at 16:40
+  (commit `423478a`), so that first run predated it and the automatic path was dead in
+  between without anything visibly breaking — `scripts/apply-migrations.mjs` never fails a
+  build on purpose.
+  **That silence is now fixed rather than remembered.** `schema_state()` in `schema.sql`
+  reports whether `apply_migration` exists and which migrations have run, and the status
+  page shows it as "Database is up to date". If it ever reads red, the detail text says
+  which of the three failures it is and what fixes that one. Trust the page over this note.
+  Schema changes otherwise apply during the Vercel build: push and the database follows.
+  Do not ask the user to tap anything for a schema change.
 - The knapsack was measured at 71ms for the largest hold in the game with all 61 goods, so
   SPEC.md's claim that it runs comfortably in a browser holds.
 - **Two pieces of `caveman` are vendored, for token cost.** `.claude/skills/caveman/` pins
