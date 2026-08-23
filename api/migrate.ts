@@ -1,6 +1,10 @@
-import { Client } from 'pg';
-import { schemaSql, seedSql, demoPricesSql } from './_sql';
-import { setupPage, resultPage } from './_page';
+// pg is CommonJS. A default import then destructure is the form that works
+// reliably from ESM; a named import can fail depending on how the CJS module
+// is analysed.
+import pg from 'pg';
+import type { Client as PgClient } from 'pg';
+import { schemaSql, seedSql, demoPricesSql } from './_sql.js';
+import { setupPage, resultPage } from './_page.js';
 
 /**
  * One-page database setup.
@@ -20,6 +24,8 @@ import { setupPage, resultPage } from './_page';
  * SERVER ONLY. Nothing here reaches the browser bundle: a test fails if
  * anything under src/ imports this directory.
  */
+
+const { Client } = pg;
 
 export const config = { maxDuration: 60 };
 
@@ -132,7 +138,7 @@ export function isAuthFailure(message: string): boolean {
 async function connect(
   ref: string,
   password: string,
-): Promise<{ client: Client; via: string } | { error: string; attempts: Attempt[] }> {
+): Promise<{ client: PgClient; via: string } | { error: string; attempts: Attempt[] }> {
   const attempts: Attempt[] = [];
 
   for (const candidate of candidateConnections(ref, password)) {
@@ -171,7 +177,38 @@ async function connect(
   };
 }
 
+/**
+ * Nothing may escape uncaught.
+ *
+ * An exception here becomes Vercel's FUNCTION_INVOCATION_FAILED page, which
+ * tells the user precisely nothing and leaves them stuck. Catching it turns
+ * any failure into a page that at least names what went wrong.
+ */
 export default async function handler(req: Req, res: Res): Promise<void> {
+  try {
+    await run(req, res);
+  } catch (error) {
+    const detail = error instanceof Error ? `${error.message}` : String(error);
+    // The recovery path must not be able to fail in turn. Setting a header is
+    // a nicety; getting the message onto the screen is the point.
+    try {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    } catch {
+      // Headers already sent, or unavailable. Carry on regardless.
+    }
+    res.status(200).send(
+      resultPage({
+        ok: false,
+        steps: [{ step: 'Unexpected error', ok: false, detail }],
+        counts: [],
+        prices: 0,
+        portState: 0,
+      }),
+    );
+  }
+}
+
+async function run(req: Req, res: Res): Promise<void> {
   res.setHeader('Cache-Control', 'no-store');
   // The password is typed here; keep it out of any referrer sent onward.
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -204,7 +241,7 @@ export default async function handler(req: Req, res: Res): Promise<void> {
   }
 
   // --- Connect ------------------------------------------------------------
-  let client: Client;
+  let client: PgClient;
   let via: string;
 
   if (override) {

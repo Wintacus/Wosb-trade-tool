@@ -2,10 +2,14 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "ESNext",
+    // nodenext makes TypeScript model REAL Node ESM resolution, which enforces
+    // explicit .js extensions on relative imports. Without this the compiler
+    // happily accepts `./_sql`, which then fails at runtime with
+    // ERR_MODULE_NOT_FOUND and takes the whole function down.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
