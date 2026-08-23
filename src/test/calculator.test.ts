@@ -186,6 +186,46 @@ describe('2. knapsack optimality', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The overflow guard. Not one of the eleven — found by mutation testing, which
+// showed the guard could be deleted with every test still passing.
+// ---------------------------------------------------------------------------
+describe('refusing to compute beats a silently wrong answer', () => {
+  // Integers stay exact in JavaScript only below 2^53. Past that, arithmetic
+  // starts rounding without complaint, which for a tool whose entire job is
+  // reporting money is the worst possible failure: a confident wrong number.
+  test('an absurd price makes the solver refuse rather than round', () => {
+    expect(() =>
+      solveBoundedKnapsack(
+        [{ id: 'silly', weight: 1, value: 9_000_000_000_000_000, maxQuantity: 1000 }],
+        1000,
+      ),
+    ).toThrow(/exact integer range/i);
+  });
+
+  test('the message says what happened, not just that something did', () => {
+    let message = '';
+    try {
+      solveBoundedKnapsack(
+        [{ id: 'silly', weight: 1, value: Number.MAX_SAFE_INTEGER, maxQuantity: 10 }],
+        10,
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toMatch(/refusing to compute/i);
+  });
+
+  test('realistic values are nowhere near the limit and compute normally', () => {
+    // The largest hold in the game, filled with the most expensive good.
+    const result = solveBoundedKnapsack(
+      [{ id: 'silk', weight: 20, value: 880 * 10_000, maxQuantity: 2700 }],
+      54_000,
+    );
+    expect(result.picks[0]!.quantity).toBe(2700);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. Integer money
 // ---------------------------------------------------------------------------
 describe('3. integer money', () => {
@@ -686,6 +726,70 @@ describe('9. null stock', () => {
     );
     expect(zero.plan).toHaveLength(0);
     expect(zero.excluded[0]!.reason).toBe('out_of_stock');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Negative prices. Not one of the eleven — found by probing with hostile input.
+// ---------------------------------------------------------------------------
+describe('a negative price never becomes profit', () => {
+  // A buy price of -10.0 gold once produced 9,360 gold of profit, because a
+  // negative cost is free money to the arithmetic. The database now refuses
+  // such a row; this makes sure the calculator would not be fooled by one
+  // arriving some other way.
+  const base = {
+    serverId: SERVER,
+    origin: makePort('origin', 0, 0),
+    destination: makePort('destination', 100, 0),
+    originState: makePortState('origin'),
+    destinationState: makePortState('destination', { taxPercent: 8, dockingFee: 0 }),
+    ship: makeShip('ship', 7, 1000),
+    goods: [makeGood('suspect', 5)],
+  };
+
+  test('a negative buy price is excluded, not treated as free cargo', () => {
+    const result = expectOk(
+      planRoute({
+        ...base,
+        prices: [
+          makePrice('origin', 'suspect', { buy: -100 }),
+          makePrice('destination', 'suspect', { sell: 400 }),
+        ],
+      }),
+    );
+    expect(result.plan).toHaveLength(0);
+    expect(result.tripProfit).toBe(0);
+    expect(result.excluded[0]!.message).toMatch(/negative price/i);
+  });
+
+  test('a negative sell price is excluded too', () => {
+    const result = expectOk(
+      planRoute({
+        ...base,
+        prices: [
+          makePrice('origin', 'suspect', { buy: 100 }),
+          makePrice('destination', 'suspect', { sell: -400 }),
+        ],
+      }),
+    );
+    expect(result.plan).toHaveLength(0);
+    expect(result.tripProfit).toBe(0);
+  });
+
+  test('zero is still a legitimate price', () => {
+    // Free stock is unusual but not impossible, and must not be swept up by
+    // a rule aimed at negatives.
+    const result = expectOk(
+      planRoute({
+        ...base,
+        prices: [
+          makePrice('origin', 'suspect', { buy: 0, stock: 10 }),
+          makePrice('destination', 'suspect', { sell: 400 }),
+        ],
+      }),
+    );
+    expect(result.plan).toHaveLength(1);
+    expect(result.plan[0]!.quantity).toBe(10);
   });
 });
 

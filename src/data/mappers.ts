@@ -11,6 +11,20 @@ import type { CurrentPrice, Good, Port, PortState, Ship, Upgrade } from '../doma
 
 type Row = Record<string, unknown>;
 
+/**
+ * A text column, or null when it is absent or null.
+ *
+ * The obvious ternary comparing only against null has a trap: an ABSENT key is
+ * undefined, not null, so it falls through to the String() branch and produces
+ * the literal text "undefined". That would then be shown as a port's
+ * controlling faction or a ship's hull type, looking for all the world like
+ * real data.
+ */
+function toText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -27,10 +41,10 @@ export function toPort(row: Row): Port {
   return {
     id: String(row.id),
     name: String(row.name),
-    displayName: row.display_name === null ? null : String(row.display_name),
+    displayName: toText(row.display_name),
     x: requireNumber(row.x, 'ports.x'),
     y: requireNumber(row.y, 'ports.y'),
-    category: row.category === null ? null : String(row.category),
+    category: toText(row.category),
   };
 }
 
@@ -39,7 +53,7 @@ export function toShip(row: Row): Ship {
     id: String(row.id),
     name: String(row.name),
     shipClass: String(row.class),
-    hullType: row.hull_type === null ? null : String(row.hull_type),
+    hullType: toText(row.hull_type),
     rate: requireNumber(row.rate, 'ships.rate'),
     durability: toNumber(row.durability),
     speed: toNumber(row.speed),
@@ -62,7 +76,7 @@ export function toGood(row: Row): Good {
     maxPrice: toNumber(row.max_price),
     isTradeGood: row.is_trade_good === true,
     perishable: row.perishable === true,
-    category: row.category === null ? null : String(row.category),
+    category: toText(row.category),
   };
 }
 
@@ -70,7 +84,7 @@ export function toUpgrade(row: Row): Upgrade {
   return {
     id: String(row.id),
     name: String(row.name),
-    category: row.category === null ? null : String(row.category),
+    category: toText(row.category),
     holdFlat: toNumber(row.hold_flat) ?? 0,
     holdPercent: toNumber(row.hold_percent) ?? 0,
     speedFlat: toNumber(row.speed_flat) ?? 0,
@@ -92,7 +106,7 @@ export function toPortState(row: Row): PortState {
     taxPercent: toNumber(row.tax_percent),
     dockingFee: toNumber(row.docking_fee),
     minShipRate: toNumber(row.min_ship_rate),
-    controllingFaction: row.controlling_faction === null ? null : String(row.controlling_faction),
+    controllingFaction: toText(row.controlling_faction),
     portLevel: toNumber(row.port_level),
     portType:
       row.port_type === 'city' || row.port_type === 'settlement' ? row.port_type : null,
