@@ -17,6 +17,22 @@ because they are embedded into that endpoint at build time.
 and run `npm run gen:sql`. A test fails if the committed SQL drifts from its
 generator, or from the copy embedded in the endpoint.
 
+## Later schema changes need no password
+
+The first setup needs the database password to bootstrap. After that the
+database carries an `apply_migration` function that only the service role key
+may call, and that key already lives in Vercel. So `/api/migrate?auto=1`
+applies anything pending with nothing typed at all.
+
+Re-running `schema.sql` is how new tables, views and policies arrive, since it
+only ever creates what is absent. What it cannot do — altering something that
+already exists — goes in `migrations/`. See that folder's README.
+
+The cost, stated plainly: the service role key already reads and writes every
+row regardless of row-level security, and this adds the power to change the
+schema to whatever holds it. The key is server-side only, and a test fails the
+build if anything under `src/` could pull it into the browser.
+
 All three are safe to run more than once: the schema creates objects only if
 absent, the seed upserts, and the demo data replaces only rows already flagged
 as demo.

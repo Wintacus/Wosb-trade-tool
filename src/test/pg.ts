@@ -42,6 +42,11 @@ begin
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
     create role authenticated nologin;
   end if;
+  -- The key that bypasses row-level security, and the only role allowed to
+  -- call apply_migration.
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin bypassrls;
+  end if;
 end $roles$;
 `;
 
@@ -51,6 +56,8 @@ export interface TestDb {
   asUser: (userId: string, sql: string, params?: unknown[]) => Promise<unknown[]>;
   /** Run as a logged-out visitor with the public key, with RLS enforced. */
   asAnon: (sql: string, params?: unknown[]) => Promise<unknown[]>;
+  /** Run as the server-side key that bypasses row-level security. */
+  asServiceRole: (sql: string, params?: unknown[]) => Promise<unknown[]>;
   close: () => Promise<void>;
 }
 
@@ -81,6 +88,7 @@ export async function createTestDb(options: { seed?: boolean } = {}): Promise<Te
     db,
     asUser: (userId, sql, params) => runAs('authenticated', userId, sql, params),
     asAnon: (sql, params) => runAs('anon', null, sql, params),
+    asServiceRole: (sql, params) => runAs('service_role', null, sql, params),
     close: () => db.close(),
   };
 }

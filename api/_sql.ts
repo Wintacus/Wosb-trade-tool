@@ -310,6 +310,58 @@ create table if not exists seasons (
   active    boolean not null default false
 );
 
+-- ---------------------------------------------------------------------
+-- Self-applying schema changes
+--
+-- Once this exists, schema updates no longer need the database password.
+-- The deployed site holds the service role key already, and can ask the
+-- database to apply a change through the function below.
+--
+-- What this costs, stated plainly: the service role key already reads and
+-- writes every row in the database, bypassing row-level security entirely.
+-- This adds the ability to CHANGE THE SCHEMA to whatever holds that key. It
+-- is a real widening of what a leaked key could do. The key lives only in
+-- Vercel's server-side environment and never reaches the browser -- a test
+-- fails the build if it ever could.
+--
+-- The function is locked to service_role alone: anon and authenticated
+-- cannot execute it, so nothing reachable from a browser can call it.
+-- ---------------------------------------------------------------------
+create table if not exists schema_migrations (
+  name       text primary key,
+  checksum   text not null,
+  applied_at timestamptz not null default now()
+);
+
+create or replace function public.apply_migration(migration_sql text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  execute migration_sql;
+end $$;
+
+-- Locked down deliberately. security definer means this runs with the
+-- owner's rights, so who may CALL it is the only thing standing in the way.
+revoke all on function public.apply_migration(text) from public;
+do $grant$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.apply_migration(text) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.apply_migration(text) from authenticated';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    execute 'grant execute on function public.apply_migration(text) to service_role';
+  end if;
+end $grant$;
+
+alter table schema_migrations enable row level security;
+-- No policies: unreachable through the API by anyone but the service role.
+
 -- =====================================================================
 -- Row level security
 --
@@ -1037,3 +1089,14 @@ begin
   raise notice 'Demo OK: % price rows and % port rows, all flagged as demo', 115, 4;
 end $demo_check$;
 `;
+
+export interface Migration {
+  name: string;
+  checksum: string;
+  sql: string;
+}
+
+/** Post-baseline schema changes, applied in this order. */
+export const migrations: Migration[] = [
+
+];

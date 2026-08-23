@@ -32,6 +32,7 @@ function buildAndRun(script: string): string {
       'api/migrate.ts',
       'api/_page.ts',
       'api/_sql.ts',
+      'api/_auto.ts',
       `--outdir=${OUT}`,
       '--format=esm',
       '--platform=node',
@@ -114,7 +115,7 @@ describe('relative imports carry the extension Node requires', () => {
     // The exact mistake that broke the deployment. TypeScript is now configured
     // with nodenext so it enforces this too, but the check is cheap and the
     // failure was expensive.
-    const files = ['migrate.ts', '_page.ts', '_sql.ts'];
+    const files = ['migrate.ts', '_page.ts', '_sql.ts', '_auto.ts'];
     const offenders: string[] = [];
 
     for (const file of files) {

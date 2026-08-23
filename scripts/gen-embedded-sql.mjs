@@ -9,7 +9,8 @@
  * Re-run with:  npm run gen:sql
  * A test asserts this file matches supabase/*.sql, so they cannot drift.
  */
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -26,6 +27,33 @@ const parts = FILES.map((name) => {
   return `export const ${key}Sql = \`${embed(sql)}\`;`;
 });
 
+// Post-baseline schema changes, in filename order. Each carries a checksum so
+// an already-applied file that has since been edited is reported rather than
+// silently re-run.
+const migrationsDir = join(root, 'supabase', 'migrations');
+const migrations = existsSync(migrationsDir)
+  ? readdirSync(migrationsDir)
+      .filter((name) => name.endsWith('.sql'))
+      .sort()
+      .map((name) => {
+        const sql = readFileSync(join(migrationsDir, name), 'utf8');
+        return {
+          name,
+          checksum: createHash('sha256').update(sql).digest('hex').slice(0, 16),
+          sql,
+        };
+      })
+  : [];
+
+const migrationsLiteral = migrations.length
+  ? migrations
+      .map(
+        (m) =>
+          `  {\n    name: '${m.name}',\n    checksum: '${m.checksum}',\n    sql: \`${embed(m.sql)}\`,\n  },`,
+      )
+      .join('\n')
+  : '';
+
 const output = `/**
  * GENERATED FILE. Do not edit by hand: run \`npm run gen:sql\`.
  *
@@ -34,9 +62,23 @@ const output = `/**
  */
 
 ${parts.join('\n\n')}
+
+export interface Migration {
+  name: string;
+  checksum: string;
+  sql: string;
+}
+
+/** Post-baseline schema changes, applied in this order. */
+export const migrations: Migration[] = [
+${migrationsLiteral}
+];
 `;
 
 mkdirSync(join(root, 'api'), { recursive: true });
 writeFileSync(join(root, 'api', '_sql.ts'), output, 'utf8');
 
-console.log(`Wrote api/_sql.ts: embedded ${FILES.join(', ')}.`);
+console.log(
+  `Wrote api/_sql.ts: embedded ${FILES.join(', ')}` +
+    ` plus ${migrations.length} migration${migrations.length === 1 ? '' : 's'}.`,
+);
