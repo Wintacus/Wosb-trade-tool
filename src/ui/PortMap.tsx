@@ -86,7 +86,12 @@ const DOUBLE_TAP_SLOP = 32;
  * How far past the edge the map may be dragged before it stops, as a fraction
  * of the viewport. A little slack stops the pan feeling like it hit a wall.
  */
-const OVERSCROLL = 0.08;
+/**
+ * How much of the ports' bounding box must stay on screen, in pixels. Enough
+ * that a marker and its label remain visible, so the view always shows where
+ * you are rather than blank sea.
+ */
+const KEEP_VISIBLE = 56;
 /**
  * How close to an edge a port must be before its label anchors inward rather
  * than centring. Roughly half the width of a long port name.
@@ -140,6 +145,27 @@ export function PortMap({
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
+  /** The live offset, readable synchronously from inside a gesture. */
+  const offsetRef = useRef(offset);
+  offsetRef.current = offset;
+  /**
+   * Everything a pinch needs, captured once when the second finger lands.
+   *
+   * A pinch MUST be computed from its own starting point rather than stepped
+   * from the previous move. React batches state updates, so a burst of
+   * pointermove events all read the same stale `scale` out of the render
+   * closure and each one recomputes from it — the increments are lost, and
+   * the gesture both under-zooms and drags the anchor away. Measured: fingers
+   * asking for x2.53 produced x1.64, and the port under the fingers drifted
+   * 265px. Absolute maths from these captured values cannot drift.
+   */
+  const pinchStart = useRef<{
+    distance: number;
+    scale: number;
+    /** The content point under the fingers when the pinch began. */
+    anchorX: number;
+    anchorY: number;
+  } | null>(null);
 
   /**
    * Measure the map area so the viewBox can match it in CSS pixels.
@@ -198,28 +224,62 @@ export function PortMap({
   );
 
   /**
+   * The ports' own bounding box, in unzoomed pixels.
+   *
+   * Deliberately NOT the full canvas: fitting a wide map into a tall phone
+   * letterboxes it, so the canvas has empty bands the ports never occupy.
+   * Clamping against the canvas let the user pan into one of those bands and
+   * sit looking at blank sea with no way to tell which way was back.
+   */
+  const contentBounds = useMemo(() => {
+    if (basePositions.length === 0) {
+      return { minX: 0, minY: 0, maxX: size.width, maxY: size.height };
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of basePositions) {
+      if (point.x < minX) minX = point.x;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.y > maxY) maxY = point.y;
+    }
+    return { minX, minY, maxX, maxY };
+  }, [basePositions, size]);
+
+  /**
    * Keep the map reachable without letting it be dragged into empty space.
    *
-   * The scaled map occupies [0, size.width * atScale]: it grows right and down
-   * from the origin, NOT outward from the centre. An earlier version clamped
-   * as though it grew from the centre, which allowed only about half the
-   * travel actually needed, so the right-hand and bottom edges became
-   * unreachable as soon as you zoomed in — the map looked cut off, and at 5x
-   * the furthest port sat 553px past the edge with no way to pan to it.
+   * The rule is that the ports' bounding box must always overlap the viewport
+   * by at least KEEP_VISIBLE pixels. That single condition does three jobs:
    *
-   * Reaching the right edge requires offset.x = size.width * (1 - atScale),
-   * which is the whole of the overflow, not half of it.
+   *  - every port stays reachable, because the box may be dragged until its
+   *    far edge touches the near edge of the screen;
+   *  - no drag can end on a blank screen, which used to be possible by panning
+   *    south at 4x into the letterboxed band below the southernmost port;
+   *  - there is no resting overscroll, so releasing a drag never leaves ports
+   *    stranded outside the viewBox waiting for a spring-back that this map
+   *    never implemented.
+   *
+   * An earlier version clamped as though the map grew outward from the centre
+   * when it actually grows right and down from the origin, which allowed only
+   * half the travel needed and made the map look cut off as soon as you
+   * zoomed. The reachability checks in scripts/touch-test.mjs exist for that.
    */
   function clampOffset(next: { x: number; y: number }, atScale: number) {
-    const slackX = size.width * OVERSCROLL;
-    const slackY = size.height * OVERSCROLL;
-    // Math.min with 0 keeps the range valid at scale 1, where there is no
-    // overflow to pan through at all.
-    const minX = Math.min(0, size.width * (1 - atScale));
-    const minY = Math.min(0, size.height * (1 - atScale));
+    const { minX, minY, maxX, maxY } = contentBounds;
+    const keepX = Math.min(KEEP_VISIBLE, (maxX - minX) * atScale);
+    const keepY = Math.min(KEEP_VISIBLE, (maxY - minY) * atScale);
+    const lowX = keepX - maxX * atScale;
+    const highX = size.width - keepX - minX * atScale;
+    const lowY = keepY - maxY * atScale;
+    const highY = size.height - keepY - minY * atScale;
     return {
-      x: Math.max(minX - slackX, Math.min(slackX, next.x)),
-      y: Math.max(minY - slackY, Math.min(slackY, next.y)),
+      // Math.min guards the degenerate case where the content is wider than
+      // the range allows; without it the bounds could cross and flip.
+      x: Math.max(Math.min(lowX, highX), Math.min(next.x, Math.max(lowX, highX))),
+      y: Math.max(Math.min(lowY, highY), Math.min(next.y, Math.max(lowY, highY))),
     };
   }
 
@@ -231,21 +291,50 @@ export function PortMap({
   function zoomTo(nextScale: number, focal?: { x: number; y: number }) {
     const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
     const anchor = focal ?? { x: size.width / 2, y: size.height / 2 };
-    setOffset((current) => {
-      const ratio = clamped / scaleRef.current;
-      return clampOffset(
+    // Both the ratio and the new offset are derived from the scale this zoom
+    // is actually leaving, captured once. Reading scaleRef inside the updater
+    // could observe a value from a different render than the one `clamped`
+    // was computed against, which is how a burst of pinch events used to
+    // compound off stale numbers.
+    const from = scaleRef.current;
+    const ratio = clamped / from;
+    setOffset((current) =>
+      clampOffset(
         {
           x: anchor.x - (anchor.x - current.x) * ratio,
           y: anchor.y - (anchor.y - current.y) * ratio,
         },
         clamped,
-      );
-    });
+      ),
+    );
+    scaleRef.current = clamped;
     setScale(clamped);
   }
 
   const zoomToRef = useRef(zoomTo);
   zoomToRef.current = zoomTo;
+
+  /**
+   * Re-clamp the view whenever the viewport changes shape.
+   *
+   * Rotating to landscape re-fits the map, which moves every port and changes
+   * what a legal offset is — but the offset itself survives the rotation. A
+   * position that was legal in portrait can be far outside the new bounds, and
+   * the result was a completely blank map: measured at scale 4, five ports
+   * visible in portrait became zero after rotating, with the offset 218px past
+   * the legal floor. Nothing recovered it except a manual reset.
+   */
+  useEffect(() => {
+    setOffset((current) => {
+      const legal = clampOffset(current, scaleRef.current);
+      if (legal.x === current.x && legal.y === current.y) return current;
+      offsetRef.current = legal;
+      return legal;
+    });
+    // clampOffset closes over the freshly measured size and content bounds, so
+    // re-running on a size change is exactly the point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size, contentBounds]);
 
   /** Screen coordinates relative to the map area. */
   function localPoint(clientX: number, clientY: number) {
@@ -434,12 +523,39 @@ export function PortMap({
     if (all.length >= 2) {
       const [a, b] = all;
       const distance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      if (pinchDistance.current !== null && pinchDistance.current > 0) {
-        // Zoom about the midpoint between the fingers, not the map centre.
-        const midpoint = localPoint((a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
-        zoomTo(scale * (distance / pinchDistance.current), midpoint);
+      const midpoint = localPoint((a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
+
+      if (pinchStart.current === null) {
+        if (distance <= 0) return;
+        const from = scaleRef.current;
+        pinchStart.current = {
+          distance,
+          scale: from,
+          // The content coordinate the fingers grabbed. Holding THIS still is
+          // what makes a pinch feel like it is moving the map rather than
+          // something happening to the map.
+          anchorX: (midpoint.x - offsetRef.current.x) / from,
+          anchorY: (midpoint.y - offsetRef.current.y) / from,
+        };
+        dragged.current = true;
+        return;
       }
-      pinchDistance.current = distance;
+
+      const start = pinchStart.current;
+      const target = Math.max(
+        MIN_SCALE,
+        Math.min(MAX_SCALE, start.scale * (distance / start.distance)),
+      );
+      // Put the grabbed content point back under the fingers wherever they
+      // now are, so the pinch pans as well as zooms.
+      const next = clampOffset(
+        { x: midpoint.x - start.anchorX * target, y: midpoint.y - start.anchorY * target },
+        target,
+      );
+      scaleRef.current = target;
+      offsetRef.current = next;
+      setScale(target);
+      setOffset(next);
       dragged.current = true;
       return;
     }
@@ -450,15 +566,27 @@ export function PortMap({
     const dx = current.x - previous.x;
     const dy = current.y - previous.y;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragged.current = true;
-    setOffset((offsetNow) =>
-      clampOffset({ x: offsetNow.x + dx, y: offsetNow.y + dy }, scale),
+    // scaleRef, not the closure's `scale`: clamping a drag against a scale
+    // from an earlier render silently truncates the movement, which is how a
+    // finger travelling 72px moved the map only 24px straight after a pinch.
+    const live = scaleRef.current;
+    const next = clampOffset(
+      { x: offsetRef.current.x + dx, y: offsetRef.current.y + dy },
+      live,
     );
+    offsetRef.current = next;
+    setOffset(next);
   }
 
   function onPointerUp(event: React.PointerEvent<SVGSVGElement>) {
     const wasDragged = dragged.current;
     pointers.current.delete(event.pointerId);
-    if (pointers.current.size < 2) pinchDistance.current = null;
+    if (pointers.current.size < 2) {
+      pinchDistance.current = null;
+      // Drop the pinch anchor so the finger still down resumes a clean pan,
+      // and so a second pinch re-anchors instead of reusing a dead one.
+      pinchStart.current = null;
+    }
 
     // Double tap zooms in. It is the one-finger alternative to pinching, which
     // matters both for anyone who cannot pinch and as a fallback if a device
