@@ -83,6 +83,11 @@ const DOUBLE_TAP_MS = 300;
 /** ...and no further apart than this, in screen pixels. */
 const DOUBLE_TAP_SLOP = 32;
 /**
+ * How far past the edge the map may be dragged before it stops, as a fraction
+ * of the viewport. A little slack stops the pan feeling like it hit a wall.
+ */
+const OVERSCROLL = 0.08;
+/**
  * How close to an edge a port must be before its label anchors inward rather
  * than centring. Roughly half the width of a long port name.
  */
@@ -192,13 +197,29 @@ export function PortMap({
     [screenPositions],
   );
 
+  /**
+   * Keep the map reachable without letting it be dragged into empty space.
+   *
+   * The scaled map occupies [0, size.width * atScale]: it grows right and down
+   * from the origin, NOT outward from the centre. An earlier version clamped
+   * as though it grew from the centre, which allowed only about half the
+   * travel actually needed, so the right-hand and bottom edges became
+   * unreachable as soon as you zoomed in — the map looked cut off, and at 5x
+   * the furthest port sat 553px past the edge with no way to pan to it.
+   *
+   * Reaching the right edge requires offset.x = size.width * (1 - atScale),
+   * which is the whole of the overflow, not half of it.
+   */
   function clampOffset(next: { x: number; y: number }, atScale: number) {
-    // Never let the map be dragged entirely off screen.
-    const maxX = (size.width * (atScale - 1)) / 2;
-    const maxY = (size.height * (atScale - 1)) / 2;
+    const slackX = size.width * OVERSCROLL;
+    const slackY = size.height * OVERSCROLL;
+    // Math.min with 0 keeps the range valid at scale 1, where there is no
+    // overflow to pan through at all.
+    const minX = Math.min(0, size.width * (1 - atScale));
+    const minY = Math.min(0, size.height * (1 - atScale));
     return {
-      x: Math.max(-maxX - size.width * 0.25, Math.min(maxX + size.width * 0.25, next.x)),
-      y: Math.max(-maxY - size.height * 0.25, Math.min(maxY + size.height * 0.25, next.y)),
+      x: Math.max(minX - slackX, Math.min(slackX, next.x)),
+      y: Math.max(minY - slackY, Math.min(slackY, next.y)),
     };
   }
 

@@ -112,6 +112,16 @@ try {
 
   // Panning must track the finger exactly. It used to move at 0.36x-2.9x
   // because a CSS-pixel delta was applied as an SVG unit.
+  //
+  // Measured while ZOOMED IN, deliberately. At scale 1 the whole map already
+  // fits the screen, so there is nowhere to pan to and the clamp correctly
+  // refuses to move it — asserting 1:1 tracking there tests the clamp, not
+  // the tracking.
+  await reset();
+  for (let i = 0; i < 3; i += 1) {
+    await page.click('button[aria-label="Zoom in"]');
+    await page.waitForTimeout(120);
+  }
   const xs = () =>
     page.$$eval('svg circle[r="22"]', (els) =>
       els.slice(0, 3).map((e) => Number(e.getAttribute('cx'))),
@@ -166,6 +176,59 @@ try {
   check('a two-finger pinch zooms the map', ratio > 1.1, `spread x${ratio.toFixed(2)}`);
   const pageScale = await page.evaluate(() => visualViewport.scale);
   check('the pinch does not zoom the page (Chromium only)', pageScale === 1, `visualViewport.scale ${pageScale}`);
+
+  // Zoomed in, every edge of the map must still be reachable by panning.
+  // This is the bug a user hit: the clamp allowed only half the travel the
+  // overflow needed, so the right and bottom of the map were cut off and
+  // could not be panned to. It got worse the further you zoomed.
+  await reset();
+  for (let i = 0; i < 4; i += 1) {
+    await page.click('button[aria-label="Zoom in"]');
+    await page.waitForTimeout(120);
+  }
+  // The map does not fill the screen: a header sits above it and the port
+  // card below. A drag starting at a guessed y can land on the card and do
+  // nothing, which reads as a failure of the map.
+  const surface = await page.$('.map-surface');
+  const area = await surface.boundingBox();
+  const dragTo = async (fromX, fromY, toX, toY) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: fromX, y: fromY, id: 1 }] });
+    for (let i = 1; i <= 8; i += 1) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: fromX + ((toX - fromX) * i) / 8, y: fromY + ((toY - fromY) * i) / 8, id: 1 }],
+      });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(60);
+  };
+  const midY = area.y + area.height / 2;
+  for (let d = 0; d < 12; d += 1) {
+    await dragTo(area.x + area.width - 40, midY, area.x + 40, midY);
+  }
+  const right = await page.evaluate(() => {
+    const cx = [...document.querySelectorAll('svg circle[r="22"]')].map((e) => Number(e.getAttribute('cx')));
+    return { max: Math.max(...cx), width: document.querySelector('svg').viewBox.baseVal.width };
+  });
+  check(
+    'the right edge of the map is reachable when zoomed in',
+    right.max <= right.width + 5,
+    right.max <= right.width + 5 ? '' : `rightmost port ${Math.round(right.max - right.width)}px past the edge`,
+  );
+
+  const midX = area.x + area.width / 2;
+  for (let d = 0; d < 12; d += 1) {
+    await dragTo(midX, area.y + area.height - 40, midX, area.y + 40);
+  }
+  const bottom = await page.evaluate(() => {
+    const cy = [...document.querySelectorAll('svg circle[r="22"]')].map((e) => Number(e.getAttribute('cy')));
+    return { max: Math.max(...cy), height: document.querySelector('svg').viewBox.baseVal.height };
+  });
+  check(
+    'the bottom edge of the map is reachable when zoomed in',
+    bottom.max <= bottom.height + 5,
+    bottom.max <= bottom.height + 5 ? '' : `lowest port ${Math.round(bottom.max - bottom.height)}px past the edge`,
+  );
 
   // No label may run off the viewBox: "Cursed City" rendered as "ursed City".
   await reset();
