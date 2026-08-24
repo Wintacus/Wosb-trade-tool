@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-24 — Phase 0 and Phase 1 complete and verified. Phase 2 not started.
+Last updated: 2026-08-24 — Phase 2 in progress (session 2).
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -18,9 +18,24 @@ the next session must know; delete what it merely finds interesting.
 
 Phase 1's "Done when" is fully met. Nothing is outstanding on it.
 
-## Next — Phase 2 (Core UI)
+## In progress — Phase 2 (Core UI)
 
-Start this in a **fresh session** (see Token discipline in CLAUDE.md).
+Done so far (branch `claude/phase-2-6gqs8q`, both commits pushed):
+
+- `src/ui/freshness.ts` — SPEC 6.3 bands. Colour, icon and label together, always.
+  Thresholds are parameters, ready for a settings screen.
+- `src/ui/ports.ts` — port search (accent-insensitive), availability with reasons,
+  map bounds derived from the data.
+- `src/ui/cluster.ts` — marker clustering.
+- `src/ui/table.ts` — supporting-table rows and the four sort metrics.
+- `src/lib/prefs.ts` — this-device storage: server, presets, recent routes, gold limit.
+- `src/domain/suggest.ts` — "nearest profitable port" without running 41 knapsacks.
+- `src/data/queries.ts` — paged reference and per-server loads.
+- `src/ui/Ui.tsx`, `FreshnessBadge.tsx`, `PortList.tsx`, `PortMap.tsx`.
+- **357 tests passing** (289 from Phase 1, 68 new).
+
+Still outstanding: the ship picker with presets, the results screen, the four-step
+flow shell, and replacing `src/App.tsx` (still the Phase 0/1 status page).
 
 **Before that session ends, run `npm run tokens` and paste the headline numbers below.**
 It compares this session against session 1 and prints a verdict. Session 1's baseline,
@@ -41,6 +56,12 @@ rate, median context 349,208, peak 773,678.**
 - Replace `src/App.tsx` entirely — it is a status page, not product UI
 
 ## Decisions already made — do not re-litigate
+
+0. **Phase 2 UI, decided by the user on 2026-08-24:** ship presets live in this
+   browser's storage only (no silent account, nothing to switch on in Supabase);
+   the port picker opens on the searchable list with a tab to the map; the server
+   is asked once and then changeable from the header; freshness thresholds ship as
+   the SPEC defaults with no settings screen until Phase 4.
 
 1. **§5.9 test 11** — observed prices in `goods.json` are **sell prices only**; a Buy control
    has never been seen on a trade good. Both ports have `buy_price = null`; the expected
