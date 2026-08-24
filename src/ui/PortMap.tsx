@@ -82,6 +82,11 @@ const CLUSTER_SEPARATION = 46;
 const DOUBLE_TAP_MS = 300;
 /** ...and no further apart than this, in screen pixels. */
 const DOUBLE_TAP_SLOP = 32;
+/**
+ * How close to an edge a port must be before its label anchors inward rather
+ * than centring. Roughly half the width of a long port name.
+ */
+const LABEL_EDGE_PAD = 60;
 /** Fallback size before the first measurement lands. */
 const FALLBACK_SIZE = { width: 360, height: 480 };
 
@@ -626,10 +631,22 @@ export function PortMap({
                 >
                   {band.icon}
                 </text>
+                {/*
+                  Anchor the label inward near the edges. A centred label on a
+                  port close to the left or right edge runs off the viewBox and
+                  is silently clipped — "Cursed City" rendered as "ursed City"
+                  until a screenshot from the touch harness showed it.
+                */}
                 <text
                   x={x}
                   y={y + MARKER_RADIUS + 14}
-                  textAnchor="middle"
+                  textAnchor={
+                    x < LABEL_EDGE_PAD
+                      ? "start"
+                      : x > size.width - LABEL_EDGE_PAD
+                        ? "end"
+                        : "middle"
+                  }
                   fontSize={11}
                   fill={isSelected ? "#fbbf24" : "#cbd5e1"}
                   opacity={availability.selectable ? 1 : 0.5}
