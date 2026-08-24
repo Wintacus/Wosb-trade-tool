@@ -58,6 +58,23 @@ listeners passively. Fixed with native `{ passive: false }` listeners scoped to 
 only — never globally, which would break pinch-zoom on text elsewhere. **OS edge-swipe
 strips (~20-24px) cannot be reclaimed by any web page**; the map is inset to stay clear.
 
+**There is now a real touch-testing setup — use it.** `npm i -D playwright` (deliberately
+not in package.json: CI has no browser and the install would slow every build), then
+`node scripts/touch-test.mjs`. It serves `map-harness.html` (dev-server only, never
+built into the site), mounts the real map with the real 42 ports, and drives it in
+headless Chromium with real multi-touch: tap targets, 1:1 pan tracking, pinch zoom,
+edge reachability, label clipping, tap-to-select, cluster-to-zoom. Take screenshots with
+it and LOOK at them — the clipped "Cursed City" label was found no other way.
+**Its limit:** Chromium implements no `gesturestart`, and Playwright's WebKit cannot be
+downloaded here (the proxy blocks its CDN), so iOS Safari page zoom is not covered.
+
+**A user-reported bug the tests all missed, then caught (2026-08-24):** the map could
+not be panned right and looked cut off when zoomed. `clampOffset` treated the scaled map
+as growing outward from the centre when it actually grows right and down from the
+origin, so it permitted half the needed travel; at 5x the furthest port sat 553px past
+the edge, unreachable. **Both times a phone found something, it was geometry, and both
+times the fix was to go measure it in a browser rather than reason about it.**
+
 **Unverified at the live URL.** Everything above is proven by tests and a production
 build, but nobody has yet loaded the deployed site and clicked through it. That is
 the one check this session could not run.
