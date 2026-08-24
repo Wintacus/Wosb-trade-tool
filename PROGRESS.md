@@ -1,60 +1,26 @@
 # PROGRESS
 
-Last updated: 2026-08-23 — Phase 0 and Phase 1 COMPLETE, verified live, audited and mutation-tested
+Last updated: 2026-08-24 — Phase 0 and Phase 1 complete and verified. Phase 2 not started.
+
+Keep this file short. It is loaded into every session and then replayed on every request
+inside that session, so narrative history here is paid for hundreds of times. Record what
+the next session must know; delete what it merely finds interesting.
 
 ## Done
 
-- [x] **Phase 0** — Vite + React + TypeScript + Tailwind v4, production build verified,
-      `.env` gitignored from the first commit, `.env.example` documents the four variables.
-- [x] **Phase 1 — schema** — `supabase/schema.sql`: all 13 tables, `prices_current` view,
-      row-level security on every table with the policies from SPEC.md §3.2.
-- [x] **Phase 1 — seed** — `supabase/seed.sql`, generated from `data/*.json`, with row-count
-      assertions that roll the import back if anything is short.
-- [x] **Phase 1 — demo data** — `supabase/demo_prices.sql`, 115 clearly-flagged demo rows.
-- [x] **Phase 1 — calculator** — money, rate gating, distance, effective ship stats, exact
-      bounded knapsack, four metrics, return leg, optional gold limit.
-- [x] **Phase 1 — tests** — all eleven from SPEC.md §5.9, plus RLS verification, secret-leak
-      guards and an end-to-end run. 121 assertions, all passing.
+- **Phase 0** — Vite + React + TypeScript + Tailwind v4, deployed, `.env` gitignored from
+  the first commit, `.env.example` documents the four variables.
+- **Phase 1** — `supabase/schema.sql` (13 tables, `prices_current`, RLS on everything),
+  `supabase/seed.sql` with row-count assertions, `supabase/demo_prices.sql` (115 flagged
+  demo rows), the calculator, and all eleven SPEC §5.9 tests.
+- **289 tests across 20 files, all passing.** Includes RLS verification, secret-leak guards,
+  and an end-to-end run against real Postgres.
 
-## Mutation tested
+Phase 1's "Done when" is fully met. Nothing is outstanding on it.
 
-Twenty-nine deliberate sabotages were run against the committed code to see which
-ones the tests would notice. Twenty-five were caught. Of the four survivors, two were
-not real defects (the tests were right to stay green) and two were genuine blind spots,
-now closed. The exercise also turned up a real bug: an absent database column became the
-literal string "undefined" rather than null, which would have shown as a port's
-controlling faction.
+## Next — Phase 2 (Core UI)
 
-**Two lessons worth keeping:**
-- A rising total test count does not mean a test was added. An edit silently failed to
-  apply and the count went up anyway, because of other files. Verify the count in the
-  file you touched.
-- Prefer a real Postgres over a mock wherever the thing being tested is what the
-  database will accept. A mocked fetch answers 200 to a request the database refuses.
-
-## Audited
-
-A deliberate hunt for defects on 2026-08-23 found four, all now fixed and on main:
-service_role could not read `schema_migrations` so automatic updates would have failed
-on first use; a negative buy price conjured profit from nothing; the browser secret check
-scanned for names Vite never bundles so it could not catch a real leak while raising false
-ones; and a PostgREST schema-cache race would have broken the first automatic update.
-
-The lesson worth keeping: **202 tests passed over the first of those** because they stubbed
-PostgREST out. A mocked fetch answers 200 to a request the real database refuses. Prefer a
-real Postgres over a mock wherever the thing being tested is what the database will accept.
-
-## Verified live
-
-The user ran `/api/migrate` on 2026-08-23 and it reported green: connected via
-pooler us-west-2, schema and security applied, reference data and demo prices
-loaded, all row counts matching, row-level security enabled on every table.
-
-**Phase 1's "Done when" is therefore fully met.** Nothing is outstanding on it.
-
-## Next (Phase 2 — Core UI)
-
-Phase 1 is done, so Phase 2 may begin.
+Start this in a **fresh session** (see Token discipline in CLAUDE.md).
 
 - Four-step flow: origin → destination → ship → results
 - Map of the 42 ports with pan/zoom, **plus a searchable text list as an equal alternative**
@@ -66,66 +32,53 @@ Phase 1 is done, so Phase 2 may begin.
 
 ## Decisions already made — do not re-litigate
 
-1. **§5.9 test 11** — the observed prices in `goods.json` `_validationEvidence` are **sell
-   prices only**; a Buy control has never been seen on a trade good. Both ports therefore have
-   `buy_price = null` and the expected answer is zero profitable goods in both directions.
-2. **Demo data** — small and hand-built, not a generated full grid.
-3. **Tax rounding** — tax rounds **up**, so quoted profit is never higher than reality.
-4. **Schema application** — automated via `/api/migrate`. The user never pastes SQL,
-   never copies a connection string, and sets no environment variables for it.
+1. **§5.9 test 11** — observed prices in `goods.json` are **sell prices only**; a Buy control
+   has never been seen on a trade good. Both ports have `buy_price = null`; the expected
+   answer is zero profitable goods in both directions.
+2. **Demo data** — small and hand-built, not a generated grid.
+3. **Tax rounds up**, so quoted profit is never higher than reality.
+4. **Schema changes apply on deploy.** Never hand the user SQL.
+5. **`port_state_submissions` is append-only**, like `price_submissions`, with
+   `port_state_current` resolving each field independently. No deviation from SPEC §3.2 remains.
 
-## Things the next session should know
+## What the next session must know
 
-- The user has **no local dev environment** — phone only. Never suggest running a command
-  locally. Everything is verified at the live Vercel URL or in the GitHub Actions tab.
-- Claude sessions have **no Supabase credentials**, but that does NOT mean handing the user
-  SQL. Schema changes apply during the Vercel build: `scripts/apply-migrations.mjs` runs
+- **The user has no local dev environment — phone only.** Never suggest running anything
+  locally. Verification happens at the live Vercel URL.
+- **Schema changes apply during the Vercel build.** `scripts/apply-migrations.mjs` runs
   `applyPendingChanges()` from `api/_auto.ts`, which calls the database's `apply_migration`
-  function using `SUPABASE_SERVICE_ROLE_KEY`. Pushing is the whole workflow.
-  **There is no `DATABASE_URL` anywhere in this project.** `api/migrate.ts` asks for the
-  password in a form and uses it for that one request only; nothing stores it. Two earlier
-  lines here claimed a `DATABASE_URL` env var existed and were simply wrong.
-- `supabase/seed.sql`, `supabase/demo_prices.sql` and `api/_sql.ts` are **generated**. Edit
-  `scripts/gen-*.mjs` and run `npm run gen:sql`. Tests fail if any of them drifts.
-- `api/` is server-only: it reads `SUPABASE_SERVICE_ROLE_KEY` and pulls in the Postgres
-  driver. A test fails if anything under `src/` imports it, which would bundle all of that
-  into the browser. (It does **not** read `ADMIN_TOKEN` — that was another stale claim here.)
-- Tests run the **real** `schema.sql` inside PGlite (Postgres compiled to WebAssembly), so a
-  broken SQL file fails CI rather than surprising the user in the dashboard.
-- **There is no longer any deviation from SPEC.md §3.2.** `port_state_submissions` is
-  append-only like `price_submissions`, and `port_state_current` resolves each field
-  independently so correcting a port's tax cannot erase its shallow-water limit. Demo port
-  rows carry `is_demo` and are displaced by the first real observation.
-- **Reference price bands are stored in tenths of gold**, converted from the whole gold in
-  `goods.json`, so they compare like-for-like against submitted prices.
-- The gold-limited cargo solver reports `budget.provablyOptimal` and
-  `budget.upperBoundProfit`. When optimality is not proven, show the gap to the ceiling
-  rather than either claiming it is best or implying it is bad — measured over 300 random
-  cases the median gap is 0% and 97% land on the true optimum. Never present an unproven
-  plan as optimal.
-- Both once-open questions are settled: the append-only `port_state` redesign is approved
-  and merged, and the migration function is wired up.
-- **The password bootstrap — believed done, and now self-reporting.** The user entered the
-  database password at `/api/migrate` on 2026-08-23 to install `apply_migration`, which
-  cannot be created any other way: no credential except the password runs DDL. An earlier
-  run went green at 16:19, but `apply_migration` was only written into the schema at 16:40
-  (commit `423478a`), so that first run predated it and the automatic path was dead in
-  between without anything visibly breaking — `scripts/apply-migrations.mjs` never fails a
-  build on purpose.
-  **That silence is now fixed rather than remembered.** `schema_state()` in `schema.sql`
-  reports whether `apply_migration` exists and which migrations have run, and the status
-  page shows it as "Database is up to date". If it ever reads red, the detail text says
-  which of the three failures it is and what fixes that one. Trust the page over this note.
-  Schema changes otherwise apply during the Vercel build: push and the database follows.
-  Do not ask the user to tap anything for a schema change.
-- The knapsack was measured at 71ms for the largest hold in the game with all 61 goods, so
-  SPEC.md's claim that it runs comfortably in a browser holds.
-- **Two pieces of `caveman` are vendored, for token cost.** `.claude/skills/caveman/` pins
-  terse replies at its `lite` level — CLAUDE.md says to apply it from the first reply of every
-  session. `.claude/agents/caveman-explore.md` handles broad repo searches in a side channel and
-  reports back only `path:line` citations, so file contents stay out of the conversation.
-  Provenance, licence, hashes and what was deliberately left out are in
-  `.claude/skills/caveman/VENDOR.md`. **Read the honest limits there before quoting any saving:**
-  the skill only cuts output tokens, the agent only helps on repo search, and upstream's headline
-  33.2% belongs to a local proxy that cannot run in a phone-only, ephemeral-container setup.
-  Nothing has been measured on this project.
+  using `SUPABASE_SERVICE_ROLE_KEY`. Pushing is the whole workflow. **There is no
+  `DATABASE_URL` in this project** — `api/migrate.ts` takes the password in a form and uses
+  it for one request only.
+- **The password bootstrap is believed done** (entered 2026-08-23). It installed
+  `apply_migration`, which no other credential can create. `schema_state()` now reports
+  whether it exists and which migrations have run, and the status page shows it as
+  "Database is up to date" — **trust that page over this note.**
+- **Generated files:** `supabase/seed.sql`, `supabase/demo_prices.sql`, `api/_sql.ts` and
+  `src/lib/migrations.generated.ts`. Edit `scripts/gen-*.mjs`, then `npm run gen:sql`.
+  Tests fail if any drifts.
+- **`api/` is server-only** — reads `SUPABASE_SERVICE_ROLE_KEY`, pulls in the Postgres driver.
+  A test fails if anything under `src/` imports it.
+- **Tests run the real `schema.sql` inside PGlite**, so broken SQL fails CI rather than
+  surprising the user. Prefer a real Postgres over a mock wherever the question is what the
+  database will accept — a mocked fetch answers 200 to a request the database refuses. That
+  exact blind spot let 202 tests pass over a missing table grant.
+- **Prices are integer tenths of gold.** Reference bands in `goods.json` are converted on
+  import so they compare like-for-like.
+- **`budget.provablyOptimal` and `budget.upperBoundProfit`** — when optimality is not proven,
+  show the gap to the ceiling. Median gap is 0%, 97% hit the true optimum. Never present an
+  unproven plan as optimal. The knapsack runs in 71ms at the largest hold with all 61 goods.
+- **Two `caveman` files are vendored** for token cost: `.claude/skills/caveman/` (terse
+  replies, pinned to `lite`) and `.claude/agents/caveman-explore.md` (repo search in a side
+  channel, returns only `path:line`). Provenance, licences and honest limits are in
+  `.claude/skills/caveman/VENDOR.md`. The agent targets input tokens, which is the
+  expensive half; the skill targets output, which measured at 0.32% of raw tokens.
+
+## Lessons already paid for
+
+- A rising total test count does not prove a test was added — an edit silently failed to
+  apply and the count rose anyway from other files. Verify the count in the file you touched.
+- Mutation testing found a real bug: an absent database column became the literal string
+  `"undefined"` rather than null, and would have displayed as a port's controlling faction.
+- A negative buy price once conjured profit from nothing. Fixed at the database with CHECK
+  constraints and in the calculator. Guard values at the bottom, where every path meets.

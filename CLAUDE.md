@@ -87,6 +87,17 @@ OCR is an accelerator. If OCR is broken, removed, or never finished, the app mus
 
 ---
 
+## Token discipline
+
+The first session of this project spent 146.8 million tokens. **95.6% of that was re-reading conversation already sent** — the API keeps no memory, so every tool call re-sends the entire conversation. Cost is therefore *requests × context size*, and both grow all session. These are measured rules, not preferences.
+
+- **Batch independent tool calls into one message.** This is the single biggest lever and it belongs to Claude, not the user. Each extra round trip replays the whole conversation again — about 350,000 tokens per trip at mid-session. The first session batched **1.8%** of its 386 calls and paid full freight for the rest.
+- **Start a fresh session at each phase boundary.** A new session begins near 50,000 tokens of context; the first one ended at 774,000, so identical work cost several times more by the end. `PROGRESS.md` plus this file are the handover and they are sufficient. Never begin a phase in the session that finished the previous one.
+- **Read the part of `SPEC.md` you need, never the whole file.** It is ~7,900 tokens. Once read it is replayed on every following request for the rest of the session.
+- **Run the tests you affected. Run all of them once, before pushing.** A full-suite re-run after each small edit costs a round trip and puts a screenful of output into the context permanently.
+- **Keep commit messages to a short paragraph.** They are billed as output and then replayed as context — expensive twice. The first session's essay-length messages were a mistake.
+- **Audits are cheapest at the start of a session, aimed at the repository.** "Review everything from the beginning" late in a session re-reads the whole conversation to do it; two such requests were 30.9% of all replayed tokens. The same question in a fresh session reads the code instead — and the code is the truth, not the chat log.
+
 ## Session continuity
 
 Sessions end unpredictably — usage limits, context running out, the user closing the app. Assume any session may be your last, and leave the repo in a state the next session can resume from.
