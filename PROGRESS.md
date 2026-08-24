@@ -68,11 +68,13 @@ Start this in a **fresh session** (see Token discipline in CLAUDE.md).
 - **`budget.provablyOptimal` and `budget.upperBoundProfit`** — when optimality is not proven,
   show the gap to the ceiling. Median gap is 0%, 97% hit the true optimum. Never present an
   unproven plan as optimal. The knapsack runs in 71ms at the largest hold with all 61 goods.
-- **Two `caveman` files are vendored** for token cost: `.claude/skills/caveman/` (terse
-  replies, pinned to `lite`) and `.claude/agents/caveman-explore.md` (repo search in a side
-  channel, returns only `path:line`). Provenance, licences and honest limits are in
-  `.claude/skills/caveman/VENDOR.md`. The agent targets input tokens, which is the
-  expensive half; the skill targets output, which measured at 0.32% of raw tokens.
+- **`.claude/agents/caveman-explore.md`** runs broad repo searches in a side channel and
+  returns only `path:line` citations, keeping file contents out of the conversation. It
+  targets replayed input, which is 95.6% of spend. Provenance and licence in
+  `.claude/agents/VENDOR.md`. Its companion output-compression skill was vendored on
+  2026-08-23 and **removed on 2026-08-24** — visible replies measured ~7,000 tokens across
+  the whole first session, so the skill's ~2,100 tokens of instructions cost more to carry
+  than it could save. Do not re-add it without new measurements.
 
 ## Lessons already paid for
 

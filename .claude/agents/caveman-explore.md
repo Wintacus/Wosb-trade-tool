@@ -56,8 +56,13 @@ files it under `skills/` for its own installer's reasons.
 **Why it is here at all:** it is the only vendored piece that touches *input*
 tokens, which is where this project's spend actually is. The main conversation
 never sees the file contents it reads — only the `path:line` citations it
-reports back. Everything else in `.claude/skills/caveman/` compresses output,
-which is the smaller half.
+reports back.
+
+Its companion, the `caveman` output-compression skill, was removed on 2026-08-24:
+measurement showed visible replies were ~7,000 tokens across an entire 146.8M-token
+session, so the skill's own ~2,100 tokens of instructions cost more to carry than it
+could ever save. This agent survives that cull because it attacks the other side of
+the ledger.
 
 **When it earns its keep here:**
 
