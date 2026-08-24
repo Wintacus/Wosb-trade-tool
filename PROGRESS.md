@@ -73,6 +73,14 @@ pick up.
 
 - **The user has no local dev environment — phone only.** Never suggest running anything
   locally. Verification happens at the live Vercel URL.
+- **Where the live URLs are.** The Vercel project is `wintacus1/wosb-trade-tool`
+  (dashboard: https://vercel.com/wintacus1/wosb-trade-tool). Production builds from
+  `main`; a branch gets its own preview, and **the Vercel bot posts that preview link
+  as a comment on the pull request within a minute or two of opening it**. So the way
+  to hand the user a working link for unmerged work is to open the PR and read the
+  bot's comment — never ask them for the URL, and never guess at one.
+  Phase 2's preview:
+  https://wosb-trade-tool-git-claude-phase-2-6gqs8q-wintacus1.vercel.app
 - **Schema changes apply during the Vercel build.** `scripts/apply-migrations.mjs` runs
   `applyPendingChanges()` from `api/_auto.ts`, which calls the database's `apply_migration`
   using `SUPABASE_SERVICE_ROLE_KEY`. Pushing is the whole workflow. **There is no
