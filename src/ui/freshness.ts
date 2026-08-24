@@ -79,31 +79,41 @@ const LABEL: Record<FreshnessLevel, string> = {
  * component that reaches for the colour gets the other two signals in the same
  * object and has to go out of its way to drop them.
  */
-export const FRESHNESS_CLASS: Record<FreshnessLevel, { dot: string; text: string; chip: string }> = {
+export const FRESHNESS_CLASS: Record<
+  FreshnessLevel,
+  { dot: string; text: string; chip: string; svgFill: string }
+> = {
+  // svgFill is a real colour value rather than a class: a Tailwind background
+  // utility does nothing to an SVG shape's fill.
   fresh: {
     dot: 'bg-emerald-400',
     text: 'text-emerald-300',
     chip: 'bg-emerald-500/15 text-emerald-200 ring-emerald-500/40',
+    svgFill: '#34d399',
   },
   aging: {
     dot: 'bg-yellow-300',
     text: 'text-yellow-200',
     chip: 'bg-yellow-500/15 text-yellow-100 ring-yellow-500/40',
+    svgFill: '#fde047',
   },
   stale: {
     dot: 'bg-orange-400',
     text: 'text-orange-200',
     chip: 'bg-orange-500/15 text-orange-100 ring-orange-500/40',
+    svgFill: '#fb923c',
   },
   wrong: {
     dot: 'bg-red-500',
     text: 'text-red-300',
     chip: 'bg-red-500/15 text-red-200 ring-red-500/40',
+    svgFill: '#ef4444',
   },
   none: {
     dot: 'bg-slate-500',
     text: 'text-slate-400',
     chip: 'bg-slate-500/15 text-slate-300 ring-slate-500/40',
+    svgFill: '#64748b',
   },
 };
 
