@@ -95,6 +95,7 @@ The first session of this project spent 146.8 million tokens. **95.6% of that wa
 - **Read the part of `SPEC.md` you need, never the whole file.** It is ~7,900 tokens. Once read it is replayed on every following request for the rest of the session.
 - **Run the tests you affected. Run all of them once, before pushing.** A full-suite re-run after each small edit costs a round trip and puts a screenful of output into the context permanently.
 - **Keep commit messages to a short paragraph.** They are billed as output and then replayed as context — expensive twice. The first session's essay-length messages were a mistake.
+- **End every session with `npm run tokens`, and write the numbers into `PROGRESS.md`.** It reads this session's own transcript and compares requests, context growth and batching rate against the first session's baseline. It is one command and a few seconds. **A batching rate still in single digits means the rule above is not working and needs a different fix — fewer, larger shell commands — not another restatement.** Session 1 had a standing instruction to batch and still managed 2.0%, so treat the measurement as the truth and the rule as an intention.
 - **Audits are cheapest at the start of a session, aimed at the repository.** "Review everything from the beginning" late in a session re-reads the whole conversation to do it; two such requests were 30.9% of all replayed tokens. The same question in a fresh session reads the code instead — and the code is the truth, not the chat log.
 
 ## Session continuity

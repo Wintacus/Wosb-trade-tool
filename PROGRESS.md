@@ -22,6 +22,16 @@ Phase 1's "Done when" is fully met. Nothing is outstanding on it.
 
 Start this in a **fresh session** (see Token discipline in CLAUDE.md).
 
+**Before that session ends, run `npm run tokens` and paste the headline numbers below.**
+It compares this session against session 1 and prints a verdict. Session 1's baseline,
+for reference: **390 requests, 146.8M tokens, 95.6% of it replayed context, 2.0% batching
+rate, median context 349,208, peak 773,678.**
+
+| Session | Requests | Total tokens | Batching | Median context |
+|---|---|---|---|---|
+| 1 &mdash; Phase 0 + 1 | 390 | 146.8M | 2.0% | 349,208 |
+| 2 &mdash; Phase 2 | _run `npm run tokens`_ | | | |
+
 - Four-step flow: origin → destination → ship → results
 - Map of the 42 ports with pan/zoom, **plus a searchable text list as an equal alternative**
 - Freshness indicator: colour AND icon AND text label, never colour alone
