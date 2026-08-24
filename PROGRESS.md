@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-24 — Phase 2 in progress (session 2).
+Last updated: 2026-08-24 — Phase 2 complete (session 2). Phase 3 is next.
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -18,42 +18,39 @@ the next session must know; delete what it merely finds interesting.
 
 Phase 1's "Done when" is fully met. Nothing is outstanding on it.
 
-## In progress — Phase 2 (Core UI)
+## Done — Phase 2 (Core UI)
 
-Done so far (branch `claude/phase-2-6gqs8q`, both commits pushed):
+Branch `claude/phase-2-6gqs8q`, all pushed. **378 tests passing** (289 from Phase 1).
 
-- `src/ui/freshness.ts` — SPEC 6.3 bands. Colour, icon and label together, always.
-  Thresholds are parameters, ready for a settings screen.
-- `src/ui/ports.ts` — port search (accent-insensitive), availability with reasons,
-  map bounds derived from the data.
-- `src/ui/cluster.ts` — marker clustering.
-- `src/ui/table.ts` — supporting-table rows and the four sort metrics.
-- `src/lib/prefs.ts` — this-device storage: server, presets, recent routes, gold limit.
-- `src/domain/suggest.ts` — "nearest profitable port" without running 41 knapsacks.
-- `src/data/queries.ts` — paged reference and per-server loads.
-- `src/ui/Ui.tsx`, `FreshnessBadge.tsx`, `PortList.tsx`, `PortMap.tsx`.
-- **357 tests passing** (289 from Phase 1, 68 new).
+- `src/App.tsx` **is now the product UI.** The four-step flow (origin → destination →
+  ship → results) is state, not routes. Recent routes skip steps 1–2. Swap and reset
+  sit beside the picker.
+- The Phase 0/1 status page moved to `src/ui/Diagnostics.tsx`, reachable at
+  `?diagnostics=1` and from the footer link.
+- `src/ui/PortPicker.tsx` → `PortList.tsx` (searchable, the phone default) and
+  `PortMap.tsx` (pan, pinch-zoom, clustering, freshness markers).
+- `src/ui/ShipPicker.tsx` — presets created from any ship, edited in place, deleted
+  behind an inline confirm with an 8-second undo.
+- `src/ui/Results.tsx` — plan, four-metric sort, supporting table, return leg,
+  unverified caveats, budget gap, and every SPEC 6.6 empty/error state.
+- `src/domain/suggest.ts` — "nowhere profitable here, try there" without 41 knapsacks.
+- `src/data/queries.ts` — paged reads; PostgREST caps at 1,000 rows and 42 ports of
+  61 goods is well past it.
 
-Still outstanding: the ship picker with presets, the results screen, the four-step
-flow shell, and replacing `src/App.tsx` (still the Phase 0/1 status page).
+**Not built, by decision:** the settings screen for freshness thresholds (defaults
+ship as-is; revisit in Phase 4).
 
-**Before that session ends, run `npm run tokens` and paste the headline numbers below.**
-It compares this session against session 1 and prints a verdict. Session 1's baseline,
-for reference: **390 requests, 146.8M tokens, 95.6% of it replayed context, 2.0% batching
-rate, median context 349,208, peak 773,678.**
+**Unverified at the live URL.** Everything above is proven by tests and a production
+build, but nobody has yet loaded the deployed site and clicked through it. That is
+the one check this session could not run.
 
-| Session | Requests | Total tokens | Batching | Median context |
-|---|---|---|---|---|
-| 1 &mdash; Phase 0 + 1 | 390 | 146.8M | 2.0% | 349,208 |
-| 2 &mdash; Phase 2 | _run `npm run tokens`_ | | | |
+## Next — Phase 3 (Data Entry)
 
-- Four-step flow: origin → destination → ship → results
-- Map of the 42 ports with pan/zoom, **plus a searchable text list as an equal alternative**
-- Freshness indicator: colour AND icon AND text label, never colour alone
-- Results screen with the four sort metrics and the full supporting table
-- Ship presets, editable in place, upgrades optional
-- Every empty and error state from SPEC.md §6.6
-- Replace `src/App.tsx` entirely — it is a status page, not product UI
+Start in a **fresh session**. SPEC.md section 7. Build manual entry first — it is the
+guaranteed path and OCR is only an accelerator (CLAUDE.md rule 6). The results screen
+already has an "add data" button wired to `onAddData`, which currently just returns to
+the route picker and says outright that entry is not built yet; that is the seam to
+pick up.
 
 ## Decisions already made — do not re-litigate
 
