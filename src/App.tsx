@@ -281,10 +281,6 @@ export default function App() {
                 otherPortId={step === 'origin' ? destinationId : originId}
                 onPick={step === 'origin' ? chooseOrigin : chooseDestination}
                 now={now}
-                view={prefs.portPickerView}
-                onViewChange={(view) =>
-                  updatePrefs((current) => ({ ...current, portPickerView: view }))
-                }
                 stepLabel={step === 'origin' ? 'Choosing where to buy' : 'Choosing where to sell'}
               />
               {step === 'origin' && prefs.recentRoutes.length > 0 ? (

@@ -4,6 +4,7 @@ import App from '../App';
 import { planTrip } from '../domain/calculator';
 import { suggestDestinations } from '../domain/suggest';
 import type { Port, PortState } from '../domain/types';
+import { PortMap } from '../ui/PortMap';
 import { Results } from '../ui/Results';
 import { ShipPicker } from '../ui/ShipPicker';
 import { SERVER, makeGood, makePort, makePortState, makePrice, makeShip } from './fixtures';
@@ -210,5 +211,54 @@ describe('the ship picker renders', () => {
       />,
     );
     expect(html).toContain('Old faithful');
+  });
+});
+
+describe('the full-screen map renders', () => {
+  const mapPorts = [origin, destination];
+  const observations = new Map([['origin', '2026-08-24T11:30:00.000Z']]);
+
+  function renderMap(shipRate: number | null = 5) {
+    return renderToStaticMarkup(
+      <PortMap
+        ports={mapPorts}
+        portStates={states}
+        observations={observations}
+        shipRate={shipRate}
+        otherPortId={null}
+        onPick={() => {}}
+        onClose={() => {}}
+        now={Date.parse('2026-08-24T12:00:00.000Z')}
+        stepLabel="Choosing where to buy"
+      />,
+    );
+  }
+
+  it('renders as a modal layer with the step named', () => {
+    const html = renderMap();
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('Choosing where to buy');
+  });
+
+  it('labels every port on the map, not only above some zoom level', () => {
+    // The first version hid names below zoom 2, so the default view was 42
+    // anonymous dots and the freshness colour was the only signal left.
+    const html = renderMap();
+    expect(html).toContain('Port Origin');
+    expect(html).toContain('Port Destination');
+  });
+
+  it('gives every marker a 44px tap target', () => {
+    // 22px radius is the invisible hit circle. If this disappears, markers go
+    // back to being a few pixels across and effectively untappable.
+    expect(renderMap()).toContain('r="22"');
+  });
+
+  it('keeps the gesture-free zoom controls', () => {
+    // Pinching is the thing that broke on a real phone, so the buttons are
+    // the path that must always work.
+    const html = renderMap();
+    expect(html).toContain('aria-label="Zoom in"');
+    expect(html).toContain('aria-label="Zoom out"');
   });
 });

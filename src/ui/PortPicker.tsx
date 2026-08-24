@@ -1,16 +1,23 @@
-import type { Port, PortState } from '../domain/types';
-import type { PortPickerView } from '../lib/prefs';
-import { PortList } from './PortList';
-import { PortMap } from './PortMap';
-import type { FreshnessThresholds } from './freshness';
+import { useState } from "react";
+import type { Port, PortState } from "../domain/types";
+import { PortList } from "./PortList";
+import { PortMap } from "./PortMap";
+import type { FreshnessThresholds } from "./freshness";
+import { Button } from "./Ui";
 
 /**
  * Choosing a port, either way round.
  *
  * SPEC 6.2 calls the list an *equal* alternative to the map rather than a
- * fallback, so both are one tap apart and the choice is remembered. The list is
- * the default on a phone: when you know the port's name, typing three letters
- * beats pinching a map of 42 markers.
+ * fallback. They are equal here in the sense that matters — each is one tap
+ * away and either can complete the step — but they are no longer two tabs on
+ * one cramped panel.
+ *
+ * The map opens full screen instead. Sharing the page column with the list
+ * capped it at roughly 358x251 CSS pixels on a phone, which is what made its
+ * markers untappable; the fix for that is area, and the only way to get area
+ * on a phone is the whole screen. The list stays inline because it needs no
+ * more room than a list ever does.
  */
 export function PortPicker({
   ports,
@@ -21,8 +28,6 @@ export function PortPicker({
   onPick,
   now,
   thresholds,
-  view,
-  onViewChange,
   stepLabel,
 }: {
   ports: readonly Port[];
@@ -33,64 +38,50 @@ export function PortPicker({
   onPick: (port: Port) => void;
   now: number;
   thresholds?: FreshnessThresholds;
-  view: PortPickerView;
-  onViewChange: (view: PortPickerView) => void;
   stepLabel: string;
 }) {
+  const [mapOpen, setMapOpen] = useState(false);
+
   return (
     <div>
-      <div
-        role="tablist"
-        aria-label="Choose a port by list or by map"
-        className="mb-4 inline-flex rounded-xl border border-slate-700 bg-slate-900 p-1"
-      >
-        {(['list', 'map'] as const).map((option) => {
-          const active = view === option;
-          return (
-            <button
-              key={option}
-              role="tab"
-              type="button"
-              aria-selected={active}
-              onClick={() => onViewChange(option)}
-              className={`min-h-11 rounded-lg px-4 text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
-              }`}
-            >
-              {option === 'list' ? 'List' : 'Map'}
-              {/* The selected tab must not be signalled by colour alone. */}
-              {active ? <span className="sr-only"> (selected)</span> : null}
-            </button>
-          );
-        })}
+      <div className="mb-4">
+        <Button onClick={() => setMapOpen(true)} className="w-full sm:w-auto">
+          <span aria-hidden="true">🗺</span> Choose on the map
+        </Button>
+        <p className="mt-2 text-xs text-slate-500">
+          The map opens full screen. Search below if you already know the name —
+          it is usually faster.
+        </p>
       </div>
 
-      {view === 'list' ? (
-        <PortList
-          ports={ports}
-          portStates={portStates}
-          observations={observations}
-          shipRate={shipRate}
-          otherPortId={otherPortId}
-          onPick={onPick}
-          now={now}
-          thresholds={thresholds}
-        />
-      ) : (
+      <PortList
+        ports={ports}
+        portStates={portStates}
+        observations={observations}
+        shipRate={shipRate}
+        otherPortId={otherPortId}
+        onPick={onPick}
+        now={now}
+        thresholds={thresholds}
+      />
+
+      {mapOpen ? (
         <PortMap
           ports={ports}
           portStates={portStates}
           observations={observations}
           shipRate={shipRate}
           otherPortId={otherPortId}
-          onPick={onPick}
+          onPick={(port) => {
+            setMapOpen(false);
+            onPick(port);
+          }}
+          onClose={() => setMapOpen(false)}
           now={now}
           thresholds={thresholds}
           stepLabel={stepLabel}
         />
-      )}
+      ) : null}
     </div>
   );
 }

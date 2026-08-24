@@ -137,3 +137,46 @@ export function portBounds(ports: readonly Port[], padding = 0.06): Bounds {
     maxY: cy + halfHeight,
   };
 }
+
+export interface ProjectedPort {
+  id: string;
+  port: Port;
+  /** Unzoomed position in CSS pixels inside a box of the given size. */
+  x: number;
+  y: number;
+}
+
+/**
+ * Ports to screen pixels inside a box of `width` x `height`.
+ *
+ * Pixels rather than an abstract SVG space, deliberately. When the map's
+ * viewBox matches its real pixel size, one unit is one pixel, and every
+ * distance the map deals in — a drag delta, a tap radius, the clustering
+ * threshold — is expressed in the same units the screen uses. The first
+ * version of the map mixed the two, which made panning track the finger at
+ * 0.36x when zoomed out and 2.9x when zoomed in.
+ *
+ * The extent comes from the ports themselves (portBounds), never a constant:
+ * coordinates are editable database rows, so a hardcoded box would crop the
+ * map the first time one moved.
+ */
+export function projectPorts(
+  ports: readonly Port[],
+  width: number,
+  height: number,
+): ProjectedPort[] {
+  const bounds = portBounds(ports);
+  const spanX = bounds.maxX - bounds.minX;
+  const spanY = bounds.maxY - bounds.minY;
+  // Preserve the aspect ratio: stretching the sea would misrepresent every
+  // distance on screen, and distance is the one thing the map measures.
+  const fit = Math.min(width / spanX, height / spanY);
+  const marginX = (width - spanX * fit) / 2;
+  const marginY = (height - spanY * fit) / 2;
+  return ports.map((port) => ({
+    id: port.id,
+    port,
+    x: (port.x - bounds.minX) * fit + marginX,
+    y: (port.y - bounds.minY) * fit + marginY,
+  }));
+}

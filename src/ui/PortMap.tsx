@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Port, PortState } from "../domain/types";
 import { clusterPoints } from "./cluster";
 import {
@@ -6,21 +6,40 @@ import {
   freshnessFor,
   type FreshnessThresholds,
 } from "./freshness";
-import { portAvailability, portBounds, portLabel } from "./ports";
+import { portAvailability, portLabel, projectPorts } from "./ports";
 import { Button } from "./Ui";
 
 /**
- * The functional map (SPEC 6.2). Illustration is Phase 5; this is coordinates
- * on a stylised background, and it has to be honest about what it shows.
+ * The map, as a full-screen port selector (SPEC 6.2).
  *
- * Two implementation notes worth knowing before changing anything here:
+ * It opens as a layer over the whole viewport rather than sitting in the page
+ * column. That is not decoration. Rendered inline, the map got roughly
+ * 358x251 CSS pixels on a phone, and a first attempt drew 42 markers into it
+ * at five pixels across — against a 44px minimum tap target. Full screen is
+ * about 2.8x the drawing area, and that is what makes real tap targets,
+ * always-visible port names and working clustering fit at all.
  *
- *  - The viewBox comes from the port coordinates themselves. They live in the
- *    database and are editable, so a hardcoded box would crop the map the first
- *    time one moved (CLAUDE.md rule 2).
- *  - Pan and zoom are plain pointer events rather than a library. Two pointers
- *    pinch; one drags. It keeps the bundle small and the behaviour predictable
- *    on a phone, which is the only device this is ever verified on.
+ * GEOMETRY — the part that was wrong before, and why it is done this way now.
+ *
+ * The viewBox is measured in CSS pixels and matches the element's real size,
+ * so one SVG unit is one screen pixel. Pan and zoom are then applied in
+ * JavaScript when positioning each marker, NOT by an SVG group transform.
+ * Three bugs die with that change:
+ *
+ *  1. Panning tracks the finger exactly. Previously a delta measured in CSS
+ *     pixels was added to an offset consumed as SVG units, so the map moved at
+ *     0.36x the finger when zoomed out and 2.9x when zoomed in. It never felt
+ *     right at any zoom because the two units only agreed at desktop width.
+ *  2. Markers keep a constant, tappable size at every zoom. Under a scaled
+ *     group, a radius has to be divided by the scale to look constant — which
+ *     is what the old code did, and it meant zooming in never enlarged a
+ *     marker. Pinching to make something tappable is the first thing anyone
+ *     tries on a phone, and it was specifically defeated.
+ *  3. Clustering fires. The threshold is a real screen distance now. The old
+ *     34-unit threshold was below the closest pair of actual ports (54.6
+ *     units apart), so no cluster was ever drawn on real data and the hint
+ *     telling users about numbered circles described something that could not
+ *     happen.
  *
  * GESTURE CONTAINMENT — read this before "simplifying" the useEffect below.
  *
@@ -33,18 +52,15 @@ import { Button } from "./Ui";
  *     whole document no matter what CSS says.
  *  2. React's synthetic events (onTouchMove and friends) are registered at the
  *     root as PASSIVE listeners, so calling preventDefault inside them does
- *     nothing — the browser has already committed to its default. Cancelling a
- *     touch therefore requires a NATIVE listener added with { passive: false }
- *     via a ref. Do not move this back into an onTouchMove prop; it will look
- *     tidier and silently stop working.
- *  3. Containment must not depend on pointer capture. Capture is set on the
- *     marker under the finger, and React can unmount that marker mid-pinch when
- *     clusters merge; see the note in onPointerDown for why it still lives
- *     there and why losing it is survivable.
+ *     nothing. Cancelling a touch requires a NATIVE listener added with
+ *     { passive: false } via a ref. Do not move this back into an onTouchMove
+ *     prop; it will look tidier and silently stop working.
+ *  3. Containment must not depend on pointer capture, which React can tear out
+ *     from under a pinch when clusters merge.
  *  4. OS edge gestures (Android back-swipe, iOS back-swipe / app switcher) own
- *     the outer ~20-24px of the screen and CANNOT be cancelled from a web page.
- *     The only defence is to keep the interactive surface away from the edge —
- *     see `.map-surface { margin-inline }` in index.css.
+ *     the outer ~20-24px of the screen and CANNOT be cancelled from a web
+ *     page. The only defence is to keep the interactive surface away from the
+ *     edge — hence the inset on the map area below.
  *
  * All suppression is scoped to this element and to the duration of an actual
  * touch on it, so pinch-zooming the results table or any text elsewhere in the
@@ -53,14 +69,21 @@ import { Button } from "./Ui";
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 8;
-/** Screen pixels below which two markers are merged into a cluster. */
-const CLUSTER_SEPARATION = 34;
-const VIEW_WIDTH = 1000;
-const VIEW_HEIGHT = 700;
+/** Visible marker radius, in screen pixels, constant at every zoom. */
+const MARKER_RADIUS = 9;
+/** Invisible hit target radius: 22px gives the 44px minimum tap target. */
+const HIT_RADIUS = 22;
+/**
+ * Screen pixels below which two markers merge into one cluster. Slightly wider
+ * than a tap target, so two markers never sit close enough to be ambiguous.
+ */
+const CLUSTER_SEPARATION = 46;
 /** Two taps closer together than this, in milliseconds, count as a double tap. */
 const DOUBLE_TAP_MS = 300;
 /** ...and no further apart than this, in screen pixels. */
 const DOUBLE_TAP_SLOP = 32;
+/** Fallback size before the first measurement lands. */
+const FALLBACK_SIZE = { width: 360, height: 480 };
 
 interface Pointer {
   id: number;
@@ -75,6 +98,7 @@ export function PortMap({
   shipRate,
   otherPortId,
   onPick,
+  onClose,
   now,
   thresholds,
   stepLabel,
@@ -85,6 +109,7 @@ export function PortMap({
   shipRate: number | null;
   otherPortId: string | null;
   onPick: (port: Port) => void;
+  onClose: () => void;
   now: number;
   thresholds?: FreshnessThresholds;
   stepLabel: string;
@@ -92,6 +117,8 @@ export function PortMap({
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [selected, setSelected] = useState<Port | null>(null);
+  const [size, setSize] = useState(FALLBACK_SIZE);
+
   const pointers = useRef(new Map<number, Pointer>());
   const pinchDistance = useRef<number | null>(null);
   const dragged = useRef(false);
@@ -101,57 +128,120 @@ export function PortMap({
   const touchingMap = useRef(false);
   /** Last single-finger tap, for double-tap-to-zoom. */
   const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
-  /**
-   * Current scale, readable from native listeners. Those listeners are bound
-   * once (see the useEffect) so they close over the first render's `scale`;
-   * a ref is how they see the live value without rebinding on every zoom.
-   */
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
 
-  const bounds = useMemo(() => portBounds(ports), [ports]);
+  /**
+   * Measure the map area so the viewBox can match it in CSS pixels.
+   *
+   * useLayoutEffect rather than useEffect: this runs before paint, so the map
+   * is never briefly drawn at the fallback size and then jumped to the real
+   * one.
+   */
+  useLayoutEffect(() => {
+    const node = surface.current;
+    if (!node) return;
+    const measure = () => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setSize({ width: rect.width, height: rect.height });
+      }
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      // Older browsers, and the server-side render in the smoke tests.
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
-  /** Port coordinates to the SVG's own coordinate space. */
-  const project = useMemo(() => {
-    const spanX = bounds.maxX - bounds.minX;
-    const spanY = bounds.maxY - bounds.minY;
-    // Preserve the aspect ratio: stretching the sea would misrepresent every
-    // distance on screen, and distance is the one thing the map is measuring.
-    const fit = Math.min(VIEW_WIDTH / spanX, VIEW_HEIGHT / spanY);
-    const marginX = (VIEW_WIDTH - spanX * fit) / 2;
-    const marginY = (VIEW_HEIGHT - spanY * fit) / 2;
-    return (port: Port) => ({
-      x: (port.x - bounds.minX) * fit + marginX,
-      y: (port.y - bounds.minY) * fit + marginY,
-    });
-  }, [bounds]);
+  /**
+   * Unzoomed positions in CSS pixels. Extracted to ports.ts so the geometry
+   * can be tested without rendering: the bug this replaced (a clustering
+   * threshold that never fired on real data) was invisible to every test
+   * because it lived inside a component.
+   */
+  const basePositions = useMemo(
+    () => projectPorts(ports, size.width, size.height),
+    [ports, size],
+  );
 
-  const clusters = useMemo(() => {
-    const points = ports.map((port) => ({
-      id: port.id,
-      port,
-      ...project(port),
-    }));
-    // The threshold is in SVG units, so dividing by the zoom scale keeps the
-    // separation constant in real screen pixels as the user zooms in.
-    return clusterPoints(points, CLUSTER_SEPARATION / scale);
-  }, [ports, project, scale]);
+  /** Where each port actually lands on screen, after zoom and pan. */
+  const screenPositions = useMemo(
+    () =>
+      basePositions.map((point) => ({
+        ...point,
+        x: point.x * scale + offset.x,
+        y: point.y * scale + offset.y,
+      })),
+    [basePositions, scale, offset],
+  );
+
+  // Clustered in real screen pixels, so the threshold means what it says and
+  // markers separate as the user zooms in.
+  const clusters = useMemo(
+    () => clusterPoints(screenPositions, CLUSTER_SEPARATION),
+    [screenPositions],
+  );
 
   function clampOffset(next: { x: number; y: number }, atScale: number) {
     // Never let the map be dragged entirely off screen.
-    const maxX = (VIEW_WIDTH * (atScale - 1)) / 2;
-    const maxY = (VIEW_HEIGHT * (atScale - 1)) / 2;
+    const maxX = (size.width * (atScale - 1)) / 2;
+    const maxY = (size.height * (atScale - 1)) / 2;
     return {
-      x: Math.max(-maxX, Math.min(maxX, next.x)),
-      y: Math.max(-maxY, Math.min(maxY, next.y)),
+      x: Math.max(-maxX - size.width * 0.25, Math.min(maxX + size.width * 0.25, next.x)),
+      y: Math.max(-maxY - size.height * 0.25, Math.min(maxY + size.height * 0.25, next.y)),
     };
   }
 
-  function zoomTo(nextScale: number) {
+  /**
+   * Zoom about a point on screen, so what is under the fingers stays there.
+   * Zooming about the centre — the old behaviour — slides the port you are
+   * aiming at away from you, which is the opposite of what a pinch means.
+   */
+  function zoomTo(nextScale: number, focal?: { x: number; y: number }) {
     const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    const anchor = focal ?? { x: size.width / 2, y: size.height / 2 };
+    setOffset((current) => {
+      const ratio = clamped / scaleRef.current;
+      return clampOffset(
+        {
+          x: anchor.x - (anchor.x - current.x) * ratio,
+          y: anchor.y - (anchor.y - current.y) * ratio,
+        },
+        clamped,
+      );
+    });
     setScale(clamped);
-    setOffset((current) => clampOffset(current, clamped));
   }
+
+  const zoomToRef = useRef(zoomTo);
+  zoomToRef.current = zoomTo;
+
+  /** Screen coordinates relative to the map area. */
+  function localPoint(clientX: number, clientY: number) {
+    const rect = surface.current?.getBoundingClientRect();
+    if (!rect) return { x: clientX, y: clientY };
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  /** Escape closes the layer, matching every other modal a user has met. */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    // The page behind must not scroll while a full-screen layer is open.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
 
   /**
    * Native listeners the gesture containment depends on.
@@ -160,9 +250,6 @@ export function PortMap({
    * unmount. They must be native because React registers touch listeners
    * passively; see the note at the top of this file.
    */
-  const zoomToRef = useRef(zoomTo);
-  zoomToRef.current = zoomTo;
-
   useEffect(() => {
     const node = surface.current;
     if (!node) return;
@@ -226,9 +313,7 @@ export function PortMap({
       // A plain wheel is left alone so the page still scrolls under the mouse.
       if (!event.ctrlKey) return;
       event.preventDefault();
-      zoomToRef.current(
-        scaleRef.current * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
-      );
+      zoomToRef.current(scaleRef.current * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
     };
 
     // A long press on an SVG shape opens the iOS callout / Android context
@@ -237,9 +322,7 @@ export function PortMap({
 
     element.addEventListener("touchstart", onTouchStart, { passive: true });
     element.addEventListener("touchmove", onTouchMove, { passive: false });
-    element.addEventListener("gesturestart", onGestureStart, {
-      passive: false,
-    });
+    element.addEventListener("gesturestart", onGestureStart, { passive: false });
     element.addEventListener("gesturechange", onGestureChange, {
       passive: false,
     });
@@ -304,15 +387,8 @@ export function PortMap({
   function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
     // Capture stays on the pointerdown target rather than moving to the <svg>.
     // Pointer Events L3 retargets the follow-up `click` to the capture element,
-    // so capturing on the <svg> would stop marker taps from ever reaching the
-    // per-marker onClick handlers — tap-to-select would quietly die.
-    //
-    // The known weakness of capturing on a marker is that clusters merge and
-    // split as the scale changes, so React can unmount the captured node
-    // mid-pinch. That degrades gracefully: pointer events then go to whatever
-    // is under the finger, which is still inside this <svg>, and these handlers
-    // are on the <svg> so they keep receiving them by bubbling. Containment
-    // does not depend on the capture — it depends on the listeners above.
+    // so capturing on the <svg> would stop marker taps from reaching the
+    // per-marker handlers — tap-to-select would quietly die.
     (event.target as Element).setPointerCapture?.(event.pointerId);
     pointers.current.set(event.pointerId, {
       id: event.pointerId,
@@ -333,13 +409,18 @@ export function PortMap({
       const [a, b] = all;
       const distance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
       if (pinchDistance.current !== null && pinchDistance.current > 0) {
-        zoomTo(scale * (distance / pinchDistance.current));
+        // Zoom about the midpoint between the fingers, not the map centre.
+        const midpoint = localPoint((a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
+        zoomTo(scale * (distance / pinchDistance.current), midpoint);
       }
       pinchDistance.current = distance;
       dragged.current = true;
       return;
     }
 
+    // One CSS pixel of finger movement is one pixel of map movement, because
+    // the viewBox is measured in CSS pixels and the offset is applied in the
+    // same units. This is the whole fix for panning that did not track.
     const dx = current.x - previous.x;
     const dy = current.y - previous.y;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragged.current = true;
@@ -376,7 +457,10 @@ export function PortMap({
       lastTap.current = null;
       // At full zoom the second double tap goes back out, so one finger can
       // reach every zoom level without ever touching the buttons.
-      zoomTo(scale >= MAX_SCALE ? MIN_SCALE : scale * 2);
+      zoomTo(
+        scale >= MAX_SCALE ? MIN_SCALE : scale * 2,
+        localPoint(event.clientX, event.clientY),
+      );
       return;
     }
     lastTap.current = { at, x: event.clientX, y: event.clientY };
@@ -391,59 +475,51 @@ export function PortMap({
   const selectedAvailability = selected
     ? portAvailability(selected, selectedState, shipRate, otherPortId)
     : null;
+  const selectedBand = selected
+    ? freshnessFor(observations.get(selected.id) ?? null, now, thresholds)
+    : null;
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-        <p className="text-sm text-slate-400">
-          Drag to pan. Double tap, pinch, or use the buttons to zoom. Tap a
-          marker to pick it.
-        </p>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => zoomTo(scale * 1.5)}
-            ariaLabel="Zoom in"
-            className="px-3"
-          >
-            +
-          </Button>
-          <Button
-            onClick={() => zoomTo(scale / 1.5)}
-            ariaLabel="Zoom out"
-            className="px-3"
-          >
-            −
-          </Button>
-          <Button onClick={reset} className="px-3">
-            Reset
-          </Button>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Choose a port on the map. ${stepLabel}.`}
+      className="fixed inset-0 z-50 flex flex-col bg-slate-950"
+      style={{ height: "100dvh" }}
+    >
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold text-slate-100">
+            {stepLabel}
+          </h2>
+          <p className="text-xs text-slate-500">
+            Tap a port, then confirm. {ports.length} ports.
+          </p>
         </div>
-      </div>
+        <Button onClick={onClose} ariaLabel="Close the map">
+          ✕
+        </Button>
+      </header>
 
       {/*
-        The wrapper exists so the native, non-passive listeners have a plain
-        HTML element to bind to (Safari has been unreliable about touch-action
-        and listener behaviour on SVG nodes), and so `.map-surface` can inset
-        the touch area from the screen edges where the OS claims the gesture.
+        The interactive surface is inset from the screen edges on purpose: the
+        outer 20-24px belong to iOS and Android for back-swipe and app
+        switching, and a web page cannot take them back. A drag that starts
+        inside this box starts outside the strip the OS has reserved.
       */}
-      <div ref={surface} className="map-surface">
+      <div ref={surface} className="map-surface relative min-h-0 flex-1">
         <svg
-          viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-          role="application"
-          aria-label={`Map of ports. ${stepLabel}. A searchable list of the same ports is on the other tab.`}
-          className="w-full touch-none rounded-xl border border-slate-800 bg-slate-950 select-none"
+          viewBox={`0 0 ${size.width} ${size.height}`}
+          role="group"
+          aria-label="Ports plotted at their map coordinates"
+          className="h-full w-full touch-none select-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
           <defs>
-            <pattern
-              id="sea"
-              width="40"
-              height="40"
-              patternUnits="userSpaceOnUse"
-            >
+            <pattern id="sea" width="40" height="40" patternUnits="userSpaceOnUse">
               <path
                 d="M0 20 Q10 14 20 20 T40 20"
                 fill="none"
@@ -452,130 +528,158 @@ export function PortMap({
               />
             </pattern>
           </defs>
-          <rect width={VIEW_WIDTH} height={VIEW_HEIGHT} fill="#020617" />
+          <rect width={size.width} height={size.height} fill="#020617" />
           <rect
-            width={VIEW_WIDTH}
-            height={VIEW_HEIGHT}
+            width={size.width}
+            height={size.height}
             fill="url(#sea)"
             opacity="0.7"
           />
 
-          <g transform={`translate(${offset.x} ${offset.y}) scale(${scale})`}>
-            {clusters.map((cluster) => {
-              if (cluster.members.length > 1) {
-                return (
-                  <g
-                    key={cluster.id}
-                    onClick={() => !dragged.current && zoomTo(scale * 2)}
-                    className="cursor-zoom-in"
-                  >
-                    <circle
-                      cx={cluster.x}
-                      cy={cluster.y}
-                      r={14 / scale}
-                      fill="#1e293b"
-                      stroke="#64748b"
-                      strokeWidth={2 / scale}
-                    />
-                    <text
-                      x={cluster.x}
-                      y={cluster.y + 4 / scale}
-                      textAnchor="middle"
-                      fontSize={12 / scale}
-                      fill="#e2e8f0"
-                    >
-                      {cluster.members.length}
-                    </text>
-                  </g>
-                );
-              }
-
-              const { port, x, y } = cluster.members[0]!;
-              const state = portStates.get(port.id) ?? null;
-              const availability = portAvailability(
-                port,
-                state,
-                shipRate,
-                otherPortId,
-              );
-              const band = freshnessFor(
-                observations.get(port.id) ?? null,
-                now,
-                thresholds,
-              );
-              const isSelected = selected?.id === port.id;
-
+          {clusters.map((cluster) => {
+            if (cluster.members.length > 1) {
               return (
                 <g
-                  key={port.id}
+                  key={cluster.id}
                   onClick={() => {
                     if (dragged.current) return;
-                    setSelected(port);
+                    zoomTo(scale * 2, { x: cluster.x, y: cluster.y });
                   }}
-                  className="cursor-pointer"
-                  aria-label={`${portLabel(port)}, ${band.label}`}
+                  className="cursor-zoom-in"
+                  aria-label={`${cluster.members.length} ports close together. Zoom in to separate them.`}
                 >
-                  {/* Marker primary visual is freshness; faction is a small badge. */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={(isSelected ? 11 : 7) / scale}
-                    fill={FRESHNESS_CLASS[band.level].svgFill}
-                    opacity={availability.selectable ? 1 : 0.35}
-                    stroke={isSelected ? "#fbbf24" : "#0f172a"}
-                    strokeWidth={(isSelected ? 3 : 1.5) / scale}
+                    cx={cluster.x}
+                    cy={cluster.y}
+                    r={HIT_RADIUS}
+                    fill="transparent"
                   />
-                  {/* The icon repeats the band without relying on the colour. */}
+                  <circle
+                    cx={cluster.x}
+                    cy={cluster.y}
+                    r={MARKER_RADIUS + 5}
+                    fill="#1e293b"
+                    stroke="#64748b"
+                    strokeWidth={2}
+                  />
                   <text
-                    x={x}
-                    y={y - 10 / scale}
+                    x={cluster.x}
+                    y={cluster.y + 4}
                     textAnchor="middle"
-                    fontSize={11 / scale}
+                    fontSize={12}
                     fill="#e2e8f0"
-                    opacity={availability.selectable ? 0.9 : 0.4}
                   >
-                    {band.icon}
+                    {cluster.members.length}
                   </text>
-                  {scale > 2 ? (
-                    <text
-                      x={x}
-                      y={y + 18 / scale}
-                      textAnchor="middle"
-                      fontSize={11 / scale}
-                      fill="#cbd5e1"
-                    >
-                      {portLabel(port)}
-                    </text>
-                  ) : null}
                 </g>
               );
-            })}
-          </g>
+            }
+
+            const { port, x, y } = cluster.members[0]!;
+            const state = portStates.get(port.id) ?? null;
+            const availability = portAvailability(
+              port,
+              state,
+              shipRate,
+              otherPortId,
+            );
+            const band = freshnessFor(
+              observations.get(port.id) ?? null,
+              now,
+              thresholds,
+            );
+            const isSelected = selected?.id === port.id;
+
+            return (
+              <g
+                key={port.id}
+                onClick={() => {
+                  if (dragged.current) return;
+                  setSelected(port);
+                }}
+                className="cursor-pointer"
+                aria-label={`${portLabel(port)}, ${band.label}`}
+              >
+                {/* The real tap target: 44px across, invisible, always the
+                    same size no matter the zoom. The visible dot is smaller
+                    for legibility, which is why the two are separate. */}
+                <circle cx={x} cy={y} r={HIT_RADIUS} fill="transparent" />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={isSelected ? MARKER_RADIUS + 3 : MARKER_RADIUS}
+                  fill={FRESHNESS_CLASS[band.level].svgFill}
+                  opacity={availability.selectable ? 1 : 0.35}
+                  stroke={isSelected ? "#fbbf24" : "#0f172a"}
+                  strokeWidth={isSelected ? 3 : 1.5}
+                />
+                {/* The icon repeats the band without relying on the colour,
+                    and it is legible now because it does not shrink. */}
+                <text
+                  x={x}
+                  y={y + 4}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fill="#0f172a"
+                  fontWeight="700"
+                  opacity={availability.selectable ? 0.9 : 0.5}
+                >
+                  {band.icon}
+                </text>
+                <text
+                  x={x}
+                  y={y + MARKER_RADIUS + 14}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fill={isSelected ? "#fbbf24" : "#cbd5e1"}
+                  opacity={availability.selectable ? 1 : 0.5}
+                >
+                  {portLabel(port)}
+                </text>
+              </g>
+            );
+          })}
         </svg>
+
+        {/* Zoom controls sit bottom-right, inside thumb reach, and are the
+            path that needs no gesture at all. */}
+        <div className="absolute right-3 bottom-3 flex flex-col gap-2">
+          <Button
+            onClick={() => zoomTo(scale * 1.5)}
+            ariaLabel="Zoom in"
+            className="w-12 px-0"
+          >
+            +
+          </Button>
+          <Button
+            onClick={() => zoomTo(scale / 1.5)}
+            ariaLabel="Zoom out"
+            className="w-12 px-0"
+          >
+            −
+          </Button>
+          <Button onClick={reset} ariaLabel="Reset the view" className="w-12 px-0">
+            ⟲
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-3 min-h-24 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-        {selected && selectedAvailability ? (
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      {/*
+        The port card and its confirm button are pinned to the bottom of the
+        screen, so the thing you press is always in thumb reach and never
+        below a fold. The old inline map put "Choose" roughly 700px down.
+      */}
+      <div className="border-t border-slate-800 bg-slate-900/80 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {selected && selectedAvailability && selectedBand ? (
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-medium text-slate-100">
+              <p className="truncate font-medium text-slate-100">
                 {portLabel(selected)}
               </p>
-              <p className="mt-1 text-xs text-slate-400">
-                {
-                  freshnessFor(
-                    observations.get(selected.id) ?? null,
-                    now,
-                    thresholds,
-                  ).icon
-                }{" "}
-                {
-                  freshnessFor(
-                    observations.get(selected.id) ?? null,
-                    now,
-                    thresholds,
-                  ).label
-                }
+              <p className="mt-0.5 text-xs text-slate-400">
+                <span aria-hidden="true">{selectedBand.icon} </span>
+                {selectedBand.label}
+                {selectedBand.ageText ? ` · ${selectedBand.ageText}` : ""}
                 {selectedState?.controllingFaction
                   ? ` · held by ${selectedState.controllingFaction}`
                   : ""}
@@ -590,39 +694,38 @@ export function PortMap({
               variant="primary"
               disabled={!selectedAvailability.selectable}
               onClick={() => onPick(selected)}
+              className="flex-1 sm:flex-none"
             >
               Choose {portLabel(selected)}
             </Button>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">
-            Tap a marker to see the port, then confirm it. Markers show data
-            freshness; a numbered circle means several ports are too close
-            together to tap apart — zoom in.
+          <p className="py-2 text-sm text-slate-400">
+            Tap a port to see it here. A numbered circle means several ports are
+            too close to tap apart — tap it to zoom in.
           </p>
         )}
+        <MapLegend />
       </div>
-
-      <MapLegend />
     </div>
   );
 }
 
 function MapLegend() {
   const entries = [
-    { level: "fresh", icon: "✓", label: "Fresh, under 1 hour" },
-    { level: "aging", icon: "◷", label: "Aging, 1–6 hours" },
-    { level: "stale", icon: "⚠", label: "Stale, 6–24 hours" },
-    { level: "wrong", icon: "!", label: "Likely wrong, over a day" },
+    { level: "fresh", icon: "✓", label: "Under 1 hour" },
+    { level: "aging", icon: "◷", label: "1–6 hours" },
+    { level: "stale", icon: "⚠", label: "6–24 hours" },
+    { level: "wrong", icon: "!", label: "Over a day" },
     { level: "none", icon: "○", label: "Never recorded" },
   ] as const;
   return (
-    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+    <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
       {entries.map((entry) => (
-        <li key={entry.level} className="flex items-center gap-1.5">
+        <li key={entry.level} className="flex items-center gap-1">
           <span
             aria-hidden="true"
-            className={`size-2.5 rounded-full ${FRESHNESS_CLASS[entry.level].dot}`}
+            className={`size-2 rounded-full ${FRESHNESS_CLASS[entry.level].dot}`}
           />
           <span aria-hidden="true">{entry.icon}</span>
           <span>{entry.label}</span>
