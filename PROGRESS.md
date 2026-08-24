@@ -27,8 +27,8 @@ Branch `claude/phase-2-6gqs8q`, all pushed. **378 tests passing** (289 from Phas
   sit beside the picker.
 - The Phase 0/1 status page moved to `src/ui/Diagnostics.tsx`, reachable at
   `?diagnostics=1` and from the footer link.
-- `src/ui/PortPicker.tsx` → `PortList.tsx` (searchable, the phone default) and
-  `PortMap.tsx` (pan, pinch-zoom, clustering, freshness markers).
+- `src/ui/PortPicker.tsx` → `PortList.tsx` inline (searchable, the phone default) plus
+  a button opening `PortMap.tsx` **full screen**.
 - `src/ui/ShipPicker.tsx` — presets created from any ship, edited in place, deleted
   behind an inline confirm with an 8-second undo.
 - `src/ui/Results.tsx` — plan, four-metric sort, supporting table, return leg,
@@ -39,6 +39,24 @@ Branch `claude/phase-2-6gqs8q`, all pushed. **378 tests passing** (289 from Phas
 
 **Not built, by decision:** the settings screen for freshness thresholds (defaults
 ship as-is; revisit in Phase 4).
+
+**Map rebuilt after real phone feedback (2026-08-24).** The first version was a desktop
+component rendered small, and it had three bugs no test could see because they only
+appear at phone width: markers 5px across that *never grew when zoomed* (radius divided
+by scale inside a scaled group); panning that tracked the finger at 0.36x–2.9x (CSS
+pixels added to an offset consumed as SVG units); and clustering that never fired once
+(34-unit threshold below the 54.6-unit closest real port pair, so the numbered-circle
+code was dead). The map is now a full-screen layer whose viewBox is measured in CSS
+pixels, with pan/zoom applied in JS per marker. `src/test/map-geometry.test.ts` pins all
+of it against the real 42 ports at phone size. **Lesson: check UI geometry at the width
+it will actually be used at, and put the maths somewhere a test can reach it.**
+
+**Gesture containment.** Pinching the map used to zoom the page and switch apps.
+`touch-action` does not stop iOS Safari, which uses its own `gesturestart`/`gesturechange`
+events, and React's `onTouchMove` cannot cancel them because React registers touch
+listeners passively. Fixed with native `{ passive: false }` listeners scoped to the map
+only — never globally, which would break pinch-zoom on text elsewhere. **OS edge-swipe
+strips (~20-24px) cannot be reclaimed by any web page**; the map is inset to stay clear.
 
 **Unverified at the live URL.** Everything above is proven by tests and a production
 build, but nobody has yet loaded the deployed site and clicked through it. That is
