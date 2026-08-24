@@ -9,3 +9,43 @@ body,
 #root {
   min-height: 100%;
 }
+
+/*
+ * The map's touch surface.
+ *
+ * Everything here is scoped to this one element on purpose. Putting any of it
+ * on `html`/`body` would disable pinch-to-zoom for the entire app, which is an
+ * accessibility regression for anyone magnifying text — and the map is the only
+ * place that needs to own the gesture.
+ */
+.map-surface {
+  /* Browsers that honour it (Chrome/Android, Firefox, iOS 13+ for single-finger
+     panning) hand us the gesture instead of scrolling the page. iOS Safari
+     ignores this for two-finger page zoom — that case is handled by the
+     gesture-event listeners in PortMap.tsx. */
+  touch-action: none;
+
+  /* Stops scroll chaining and pull-to-refresh being triggered from the map:
+     a downward drag stays in the map instead of bubbling to the page. */
+  overscroll-behavior: contain;
+
+  /* A long press on an SVG shape otherwise raises the iOS selection bubble /
+     "copy · look up" callout mid-drag, which cancels the gesture. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  /* OS edge gestures (Android back-swipe, iOS back-swipe and the home
+     indicator) own roughly the outer 20-24px of the screen and CANNOT be
+     prevented by a web page. The App shell already gives us 16px of padding;
+     this adds ~12px more so a drag that starts on the map starts outside the
+     strip the OS has reserved for itself. */
+  margin-inline: 0.75rem;
+}
+
+/* Safari has been inconsistent about honouring touch-action on SVG elements,
+   so it is set on both the wrapper and the SVG itself. */
+.map-surface svg {
+  touch-action: none;
+}
