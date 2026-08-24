@@ -75,6 +75,37 @@ origin, so it permitted half the needed travel; at 5x the furthest port sat 553p
 the edge, unreachable. **Both times a phone found something, it was geometry, and both
 times the fix was to go measure it in a browser rather than reason about it.**
 
+**Browser testing found six more real bugs (2026-08-24, later).** An extended
+`scripts/touch-test.mjs` (28 checks) plus a new `scripts/ui-test.mjs` and
+`app-harness.html` were built. 21 checks passed; 7 failed, 6 of them genuine:
+
+1. **Pinch under-zoomed and drifted.** `zoomTo(scale * ratio)` stepped from the
+   previous move, reading `scale` from the render closure. React batches
+   updates, so a burst of pointermove events all read the same stale value.
+   Fingers asking x2.53 delivered x1.64; the anchored port drifted 265px. Pinch
+   is now **absolute** — distance, scale and grabbed point captured when the
+   second finger lands. **Never step a gesture from current state.**
+2. Same fault truncated a drag right after a pinch (72px finger → 24px map).
+3. Rotating to landscape while zoomed left a **blank map**, offset stranded
+   past the legal floor with no recovery but reset. Offset is now re-clamped
+   whenever the viewport changes shape.
+4. Panning south at 4x landed on **empty sea** — clamping used the letterboxed
+   canvas, not the ports' bounding box. Now 56px of the port box must stay on
+   screen.
+5. Resting overscroll left three ports outside the viewBox after a drag. Gone.
+6. One failure ("labels clipped when zoomed and panned") is a **test artifact**
+   — a panned map legitimately has off-screen ports; that check needs to ignore
+   ports outside the visible area. Not yet fixed.
+
+**These fixes are NOT browser-verified.** Typecheck and 390 unit tests pass, but
+partway through this work the environment stopped being able to hold a dev
+server open (`vite` and anything long-running returns exit 144), so the suite
+could not be re-run. **Next session: run `node scripts/touch-test.mjs` and
+`node scripts/ui-test.mjs` first** — `npm i playwright --no-save` if needed;
+Chromium lives at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+`scripts/ui-test.mjs` and `app-harness.html` were written by a subagent that was
+cut off before running them, so they are **unrun and unreviewed**.
+
 **Unverified at the live URL.** Everything above is proven by tests and a production
 build, but nobody has yet loaded the deployed site and clicked through it. That is
 the one check this session could not run.
