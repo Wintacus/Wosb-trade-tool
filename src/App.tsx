@@ -19,6 +19,7 @@ import {
 } from './lib/prefs';
 import { Diagnostics } from './ui/Diagnostics';
 import { PortPicker } from './ui/PortPicker';
+import { PriceEntry } from './ui/PriceEntry';
 import { Results } from './ui/Results';
 import { ServerBadge, ServerPrompt } from './ui/ServerPicker';
 import { ShipPicker } from './ui/ShipPicker';
@@ -63,6 +64,16 @@ export default function App() {
   const [originId, setOriginId] = useState<string | null>(null);
   const [destinationId, setDestinationId] = useState<string | null>(null);
   const [shipChoice, setShipChoice] = useState<ShipChoice | null>(null);
+
+  /**
+   * Price entry is a mode, not a fifth step.
+   *
+   * It answers a different question from the four-step flow -- "here is what I
+   * can see right now" rather than "what should I carry" -- and it is reachable
+   * from anywhere, including before a route exists. Making it a step would put
+   * it in the progress bar and imply the flow is unfinished without it.
+   */
+  const [entry, setEntry] = useState<{ portId: string | null } | null>(null);
 
   const [showDiagnostics, setShowDiagnostics] = useState(
     () => typeof location !== 'undefined' && new URLSearchParams(location.search).has('diagnostics'),
@@ -114,6 +125,23 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  }, [serverId]);
+
+  /**
+   * Re-read prices after a save, without blanking the screen.
+   *
+   * The freshly entered numbers have to show up immediately -- entering data
+   * and seeing no change is indistinguishable from it not having worked. This
+   * keeps the current data on screen while the new data arrives, so the entry
+   * sheet does not flash empty underneath.
+   */
+  const refreshServerData = useCallback(() => {
+    if (!serverId) return;
+    loadServerData(serverId)
+      .then(setServerData)
+      .catch((error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : String(error));
+      });
   }, [serverId]);
 
   const ports = reference?.ports ?? [];
@@ -233,6 +261,7 @@ export default function App() {
       serverId={serverId}
       onServerChange={(id) => updatePrefs((current) => ({ ...current, serverId: id }))}
       onShowDiagnostics={() => setShowDiagnostics(true)}
+      onAddPrices={serverId && serverData && !entry ? () => setEntry({ portId: null }) : undefined}
     >
       {loadError ? (
         <ErrorNote
@@ -254,7 +283,22 @@ export default function App() {
         <Spinner label="Loading prices for this server…" />
       ) : null}
 
-      {reference && serverId && serverData ? (
+      {reference && serverId && serverData && entry ? (
+        <PriceEntry
+          serverId={serverId}
+          ports={ports}
+          portStates={portStates}
+          observations={observations}
+          goods={reference.goods}
+          prices={prices}
+          now={now}
+          initialPortId={entry.portId}
+          onClose={() => setEntry(null)}
+          onSaved={refreshServerData}
+        />
+      ) : null}
+
+      {reference && serverId && serverData && !entry ? (
         <>
           <StepBar
             step={step}
@@ -339,7 +383,7 @@ export default function App() {
               now={now}
               onPickSuggestion={pickSuggestion}
               onChangeRoute={() => setStep('origin')}
-              onAddData={() => setStep('origin')}
+              onAddData={() => setEntry({ portId: origin.id })}
             />
           ) : null}
 
@@ -365,12 +409,14 @@ function Shell({
   serverId,
   onServerChange,
   onShowDiagnostics,
+  onAddPrices,
 }: {
   children: React.ReactNode;
   servers: { id: string; name: string }[];
   serverId: string | null;
   onServerChange: (id: string) => void;
   onShowDiagnostics: () => void;
+  onAddPrices?: () => void;
 }) {
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100">
@@ -382,9 +428,16 @@ function Shell({
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">WOSB Trade Tool</h1>
           </div>
-          {serverId && servers.length > 0 ? (
-            <ServerBadge servers={servers} serverId={serverId} onChange={onServerChange} />
-          ) : null}
+          <div className="flex items-center gap-2">
+            {onAddPrices ? (
+              <Button onClick={onAddPrices}>
+                <span aria-hidden="true">＋</span> Add prices
+              </Button>
+            ) : null}
+            {serverId && servers.length > 0 ? (
+              <ServerBadge servers={servers} serverId={serverId} onChange={onServerChange} />
+            ) : null}
+          </div>
         </header>
 
         <main className="flex flex-col gap-5">{children}</main>

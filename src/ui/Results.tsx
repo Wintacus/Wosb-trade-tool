@@ -286,8 +286,8 @@ export function Results({
               Add prices for these ports
             </Button>
             <p className="text-xs text-slate-500">
-              Price entry is not built yet — it is the next phase of this app. This button is here
-              so the route through the app is in place; it will not open a form today.
+              It opens at {originName}; there is a “Change port” button if you are somewhere else.
+              Type only what you can see on screen — anything left blank stays as it is.
             </p>
           </div>
         ) : planIsEmpty ? (
