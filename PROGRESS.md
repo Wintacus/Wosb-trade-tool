@@ -75,36 +75,47 @@ origin, so it permitted half the needed travel; at 5x the furthest port sat 553p
 the edge, unreachable. **Both times a phone found something, it was geometry, and both
 times the fix was to go measure it in a browser rather than reason about it.**
 
-**Browser testing found six more real bugs (2026-08-24, later).** An extended
-`scripts/touch-test.mjs` (28 checks) plus a new `scripts/ui-test.mjs` and
-`app-harness.html` were built. 21 checks passed; 7 failed, 6 of them genuine:
+**Browser testing: 28/28 passing (2026-08-25).** `scripts/touch-test.mjs` drives the
+real map in headless Chromium with real multi-touch. Run it with
+`node scripts/touch-test.mjs` (`npm i playwright --no-save` if needed; Chromium is at
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`).
 
-1. **Pinch under-zoomed and drifted.** `zoomTo(scale * ratio)` stepped from the
-   previous move, reading `scale` from the render closure. React batches
-   updates, so a burst of pointermove events all read the same stale value.
-   Fingers asking x2.53 delivered x1.64; the anchored port drifted 265px. Pinch
-   is now **absolute** — distance, scale and grabbed point captured when the
-   second finger lands. **Never step a gesture from current state.**
+**NEVER run `pkill -f vite` in this environment.** `pkill -f` matches the shell's own
+command line, which contains the word "vite", so it kills the process about to run the
+tests. That produced exit 144 and cost most of a session chasing a suite that was
+never broken. Kill by PID, or let the script's own cleanup do it.
+
+Bugs this found, all real, none visible to the 390 unit tests:
+
+1. **Pinch under-zoomed and drifted.** `zoomTo(scale * ratio)` stepped from the previous
+   move, reading `scale` from the render closure; React batches, so a burst of
+   pointermove events all read the same stale value. Fingers asking ×2.53 gave ×1.64 and
+   the anchored port drifted 265px. Pinch is now **absolute** — distance, scale and the
+   grabbed point captured when the second finger lands. **Never step a gesture from
+   current state.** Confirmed fixed on a real phone by the user.
 2. Same fault truncated a drag right after a pinch (72px finger → 24px map).
-3. Rotating to landscape while zoomed left a **blank map**, offset stranded
-   past the legal floor with no recovery but reset. Offset is now re-clamped
-   whenever the viewport changes shape.
-4. Panning south at 4x landed on **empty sea** — clamping used the letterboxed
-   canvas, not the ports' bounding box. Now 56px of the port box must stay on
-   screen.
-5. Resting overscroll left three ports outside the viewBox after a drag. Gone.
-6. One failure ("labels clipped when zoomed and panned") is a **test artifact**
-   — a panned map legitimately has off-screen ports; that check needs to ignore
-   ports outside the visible area. Not yet fixed.
+3. Rotating to landscape while zoomed left a **blank map**; the offset survived a resize
+   that changed what was legal. Re-clamped on viewport change.
+4. Panning could end on **blank sea**, and an overscroll drag **parked ports outside the
+   viewBox for good** — there is no spring-back animation, so whatever the clamp allows
+   is where the map stays. Clamping is per axis against the ports' bounding box now:
+   overflow → the screen stays inside the content; no overflow → slide within the slack
+   only. Locking the non-overflowing axis was tried and is WRONG: it silently overrides
+   the pinch anchor.
+5. Stale pointer state. `pointerup` does not always arrive for every finger, so a
+   gesture killed by a call left panning dead until reload. Cleared when the touch list
+   empties.
+6. Labels sheared off at the screen edge ("Cursed City" → "ursed City"), found by
+   looking at a screenshot.
 
-**These fixes are NOT browser-verified.** Typecheck and 390 unit tests pass, but
-partway through this work the environment stopped being able to hold a dev
-server open (`vite` and anything long-running returns exit 144), so the suite
-could not be re-run. **Next session: run `node scripts/touch-test.mjs` and
-`node scripts/ui-test.mjs` first** — `npm i playwright --no-save` if needed;
-Chromium lives at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
-`scripts/ui-test.mjs` and `app-harness.html` were written by a subagent that was
-cut off before running them, so they are **unrun and unreviewed**.
+**Four suite checks were themselves wrong** and were fixed only after verifying the app
+by hand: measuring anchor drift on an axis the clamp legitimately pins, dragging at the
+fitted view where only ~20px of slack exists, dragging from a marker the zoom had pushed
+off screen, and demanding an offset of exactly zero when the real requirement is that no
+port is parked outside. Verify a failure against the app before believing it.
+
+**Still unrun:** `scripts/ui-test.mjs` and `app-harness.html` (results screen and ship
+presets) were written by a subagent that was cut off. Never executed, never reviewed.
 
 **Unverified at the live URL.** Everything above is proven by tests and a production
 build, but nobody has yet loaded the deployed site and clicked through it. That is
