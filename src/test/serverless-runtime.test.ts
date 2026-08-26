@@ -151,6 +151,65 @@ describe('the account-minting endpoint survives real Node ESM', () => {
     expect(result).toEqual({ get: 405, post: 500, explains: true });
   }, 120_000);
 
+  test('a thrown error becomes readable JSON, never a blank crash', () => {
+    // Same failure class as api/migrate.ts's equivalent test above, applied to
+    // this endpoint's own top-level try/catch: forcing something unrelated to
+    // the Supabase call to throw must still produce a readable JSON body
+    // rather than an opaque platform-level failure.
+    const output = buildAndRun(`
+      process.env.VITE_SUPABASE_URL = 'https://testref123.supabase.co';
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
+      const m = await import('${OUT}/anon-session.js');
+      let code = 0, body = '';
+      const res = {
+        status(c) { code = c; return res; },
+        json(j) { body = JSON.stringify(j); },
+        // Made to blow up partway through handling the request.
+        setHeader() { throw new Error('boom from inside'); },
+      };
+      await m.default({ method: 'POST', headers: {} }, res);
+      console.log(JSON.stringify({ code, mentionsError: body.includes('boom from inside') }));
+    `);
+    const result = JSON.parse(output.trim().split('\n').pop()!);
+    expect(result.code).toBe(500);
+    expect(result.mentionsError).toBe(true);
+  }, 120_000);
+
+  test('a hung or unreachable upstream still returns within the timeout budget, never forever', () => {
+    // api/anon-session.ts's own weakness before this test existed: the fetch
+    // to Supabase's admin API had no timeout, so a hung upstream meant the
+    // ONLY thing that ever gave up was Vercel's platform-level gateway --
+    // which returns a bare, unparseable 504 the client cannot show a reason
+    // for. This points the handler at a reserved, non-routable address
+    // (TEST-NET-1, RFC 5737) that a real network stack will either fail to
+    // connect to immediately or hang on -- either way, this codes's own
+    // AbortController-bounded timeout must win the race, well inside
+    // UPSTREAM_TIMEOUT_MS (8s) plus a little overhead, with a body naming
+    // what happened.
+    const output = buildAndRun(`
+      process.env.VITE_SUPABASE_URL = 'http://192.0.2.1';
+      process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-key';
+      const m = await import('${OUT}/anon-session.js');
+      let code = 0, body = '';
+      const res = {
+        status(c) { code = c; return res; },
+        json(j) { body = JSON.stringify(j); },
+        setHeader() {},
+      };
+      const startedAt = Date.now();
+      await m.default({ method: 'POST', headers: { 'x-forwarded-for': 'timeout-test' } }, res);
+      console.log(JSON.stringify({ code, body, elapsedMs: Date.now() - startedAt }));
+    `);
+    const result = JSON.parse(output.trim().split('\n').pop()!);
+    // 504 if it actually timed out, 502 if the sandbox refused the connection
+    // outright -- either is a bounded, readable failure, which is the point.
+    expect([502, 504]).toContain(result.code);
+    expect(result.elapsedMs).toBeLessThan(9_500);
+    const parsed = JSON.parse(result.body);
+    expect(typeof parsed.error).toBe('string');
+    expect(parsed.error.length).toBeGreaterThan(0);
+  }, 120_000);
+
   test('a burst from one caller is throttled', () => {
     const output = buildAndRun(`
       const m = await import('${OUT}/anon-session.js');

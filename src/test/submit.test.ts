@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { parseGold, parseStock, validateRows, type DraftRow } from '../data/submit';
-import { parseCredentials } from '../lib/identity';
+import { mintCredentials, parseCredentials } from '../lib/identity';
 import { makeGood } from './fixtures';
 import { createTestDb, type TestDb } from './pg';
 
@@ -121,6 +121,37 @@ describe('stored credentials survive anything in the slot', () => {
       email: 'a@b.invalid',
       password: 'x',
     });
+  });
+});
+
+describe('minting a contributor account retries once before giving up', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function jsonResponse(status: number, body: unknown) {
+    return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+  }
+
+  test('a failure followed by success still returns credentials -- one flaky call is not fatal', async () => {
+    const calls = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValueOnce(jsonResponse(504, { error: 'The database took too long to respond.' }))
+      .mockResolvedValueOnce(jsonResponse(200, { email: 'anon-x@anon.invalid', password: 'secret' }));
+    vi.stubGlobal('fetch', calls);
+
+    await expect(mintCredentials()).resolves.toEqual({ email: 'anon-x@anon.invalid', password: 'secret' });
+    expect(calls).toHaveBeenCalledTimes(2);
+  });
+
+  test('two failures in a row surface the error rather than retrying forever', async () => {
+    const calls = vi
+      .fn<() => Promise<Response>>()
+      .mockResolvedValue(jsonResponse(502, { error: 'Could not reach the database.' }));
+    vi.stubGlobal('fetch', calls);
+
+    await expect(mintCredentials()).rejects.toThrow(/could not reach the database/i);
+    expect(calls).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -178,6 +178,24 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
+- **First live save hit a bare 504** ("Could not create a contributor account
+  (504)") — an unparseable body, meaning Vercel's own platform gateway killed
+  the function, not `anon-session.ts` returning one itself (it never sends
+  504). Root cause is unverified (no access to Vercel/Supabase logs from a
+  session), but the endpoint had two real weaknesses: no top-level try/catch,
+  and no timeout on the `fetch()` to Supabase's admin API, so a hang had
+  nothing bounding it except the platform's own opaque limit. Hardened
+  2026-08-26: try/catch matching `migrate.ts`, an 8s `AbortController` timeout
+  around that fetch (503/504 with a readable body instead), `maxDuration`
+  dropped 15→10 (realistic Hobby-tier ceiling), and one client-side retry in
+  `mintCredentials()`. Proven with two new tests in
+  `serverless-runtime.test.ts` (thrown error → JSON; hung/unreachable upstream
+  via `192.0.2.1` → bounded readable response) and two in `submit.test.ts`
+  (retry-then-succeed, two-failures-surfaces-error). **Ask the user to try
+  saving again at the preview URL — that's the only check that can confirm
+  this. A repeat bare 504 after this fix would mean the hang is on Vercel's or
+  Supabase's side, not in this code, since 8s is now well inside anything
+  Vercel would allow.**
 - **The account-minting path has never run against real Supabase.** It is the
   one part of this that cannot be proven in tests: if `POST /auth/v1/admin/users`
   rejects the reserved `.invalid` email domain, the first save fails with a

@@ -27,7 +27,26 @@
  * this directory.
  */
 
-export const config = { maxDuration: 15 };
+// Requesting more than a Hobby-tier project actually gets is harmless -- Vercel
+// just caps it -- but that plan tier commonly caps real execution around 10s
+// regardless of what is asked for, and that ceiling cannot be confirmed from
+// inside this sandbox. So this asks for 10, matching the realistic worst case,
+// and the code below is written to never depend on getting anywhere near it:
+// UPSTREAM_TIMEOUT_MS (8s) is what actually protects the caller, by winning
+// the race against whatever the platform's own limit turns out to be.
+export const config = { maxDuration: 10 };
+
+/**
+ * How long to wait for Supabase's admin API before giving up on it.
+ *
+ * A healthy call is sub-second, so several seconds already means something is
+ * wrong upstream. Kept comfortably under the maxDuration above (and under the
+ * ~10s a Hobby-tier function realistically gets) so THIS code's own timeout
+ * fires first, producing a readable JSON error, rather than losing the race to
+ * Vercel's platform-level gateway timeout -- which is the bare, unparseable
+ * 504 that sent the user looking for help in the first place.
+ */
+const UPSTREAM_TIMEOUT_MS = 8_000;
 
 interface Req {
   method?: string;
@@ -85,7 +104,34 @@ function callerKey(req: Req): string {
   return (value ?? 'unknown').split(',')[0]!.trim();
 }
 
+/**
+ * Nothing may escape uncaught.
+ *
+ * An exception here would otherwise become Vercel's opaque
+ * FUNCTION_INVOCATION_FAILED, or a bare platform-level 504 if it happened
+ * mid-request -- exactly the unreadable failure this file exists to prevent.
+ * Matches api/migrate.ts's top-level guard. In practice this should rarely
+ * fire, because the one call that could hang (the fetch to Supabase, below)
+ * already has its own bounded timeout; this is the last line of defence for
+ * anything else -- a malformed request, an unexpected shape, anything.
+ */
 export default async function handler(req: Req, res: Res): Promise<void> {
+  try {
+    await run(req, res);
+  } catch (error) {
+    try {
+      res.status(500).json({
+        error: `Unexpected error creating a contributor account: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    } catch {
+      // Response already sent, or res itself is broken. Nothing more to do.
+    }
+  }
+}
+
+async function run(req: Req, res: Res): Promise<void> {
   res.setHeader('Cache-Control', 'no-store');
 
   if (req.method !== 'POST') {
@@ -113,17 +159,43 @@ export default async function handler(req: Req, res: Res): Promise<void> {
   const email = `anon-${randomSecret(16)}@${ANON_EMAIL_DOMAIN}`;
   const password = randomSecret(24);
 
-  const response = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    // email_confirm skips the confirmation mail that would never arrive at a
-    // reserved domain, and would block the sign-in that follows.
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  });
+  // Bounded so a hung upstream (a network blip between Vercel and Supabase, a
+  // slow cold path, anything) becomes a fast, readable error instead of an
+  // opaque platform-level 504 -- see UPSTREAM_TIMEOUT_MS above. No retry: a
+  // healthy call is sub-second, so a real timeout here means something
+  // unusual is happening upstream, and a second attempt would just as likely
+  // hang again for the same reason, spending budget this endpoint does not
+  // have rather than helping the caller.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      // email_confirm skips the confirmation mail that would never arrive at a
+      // reserved domain, and would block the sign-in that follows.
+      body: JSON.stringify({ email, password, email_confirm: true }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'AbortError';
+    res.status(timedOut ? 504 : 502).json({
+      error: timedOut
+        ? `The database took longer than ${UPSTREAM_TIMEOUT_MS / 1000}s to respond, so no ` +
+          'account was created. This is usually momentary -- try saving again.'
+        : `Could not reach the database to create a contributor account: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+    });
+    return;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const detail = await response.text();

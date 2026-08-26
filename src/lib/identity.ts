@@ -75,14 +75,36 @@ export function forgetCredentials(): void {
   }
 }
 
-/** Asks the server for a fresh account. Throws with a readable message. */
-async function mintCredentials(): Promise<AnonCredentials> {
+/** One call to /api/anon-session. Throws with a readable message. */
+async function requestCredentials(): Promise<AnonCredentials> {
   const response = await fetch('/api/anon-session', { method: 'POST' });
   const body = (await response.json().catch(() => ({}))) as { email?: string; password?: string; error?: string };
   if (!response.ok || !body.email || !body.password) {
     throw new Error(body.error ?? `Could not create a contributor account (${response.status}).`);
   }
   return { email: body.email, password: body.password };
+}
+
+/**
+ * Asks the server for a fresh account, retrying once on failure.
+ *
+ * The endpoint now bounds its own slow path to a few seconds rather than
+ * hanging (see api/anon-session.ts), so a single flaky call -- a momentary
+ * blip, a cold start -- is worth one more try rather than failing the user's
+ * very first save outright with no second chance. Retried immediately, with
+ * no backoff: two failures in a row means something is actually wrong, and
+ * that is reported as-is rather than retried again.
+ */
+export async function mintCredentials(): Promise<AnonCredentials> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await requestCredentials();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 function client() {
