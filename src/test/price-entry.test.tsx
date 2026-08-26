@@ -89,6 +89,38 @@ describe('the entry screen renders', () => {
     expect(html).toContain('placeholder data');
   });
 
+  it('offers no buy field for a trade good, but keeps one reachable', () => {
+    // Confirmed in game 2026-08-26: the Market tab shows one number per trade
+    // good and it is what the port pays you. An empty "Buy" box beside it
+    // invites the same number in both, which manufactures profit from nothing.
+    const html = render('fiji');
+    const sugarRow = html.slice(html.indexOf('>Sugar<'), html.indexOf('>Silk<'));
+    expect(sugarRow).not.toContain('you pay');
+    expect(sugarRow).toContain('you get');
+    expect(sugarRow).toContain('shows a buy price for Sugar');
+  });
+
+  it('still offers buy and sell for a craft resource', () => {
+    // Those genuinely have both, on the "Trade with port" tab.
+    const html = renderToStaticMarkup(
+      <PriceEntry
+        serverId={SERVER}
+        ports={[here, elsewhere]}
+        portStates={states}
+        observations={new Map()}
+        goods={[makeGood('copper', 10, { name: 'Copper', isTradeGood: false })]}
+        prices={[]}
+        now={Date.now()}
+        initialPortId="fiji"
+        onClose={() => {}}
+        onSaved={() => {}}
+      />,
+    );
+    expect(html).toContain('you pay');
+    expect(html).toContain('you get');
+    expect(html).not.toContain('shows a buy price for Copper');
+  });
+
   it('cannot be saved until something is entered', () => {
     const html = render('fiji');
     expect(html).toContain('Nothing entered yet');

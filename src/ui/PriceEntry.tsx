@@ -223,9 +223,9 @@ export function PriceEntry({
       <div className="mt-5 flex flex-col gap-5 pb-32">
         <GoodSection
           title="Trade goods"
-          subtitle="The Market tab. These are what the route planner buys and sells."
+          subtitle="The Market tab shows one price per good, and it is what the port pays you."
           goods={tradeGoods}
-          expanded={open.trade || query.trim() !== ''}
+          expanded={open.trade || query.trim() !== '' || craftGoods.length === 0}
           onToggle={() => setOpen((s) => ({ ...s, trade: !s.trade }))}
           drafts={drafts}
           recorded={recorded}
@@ -236,9 +236,12 @@ export function PriceEntry({
         />
         <GoodSection
           title="Craft resources"
-          subtitle="The “Trade with port” tab, which shows a buy price, a sell price and a quantity."
+          subtitle="The “Trade with port” tab: a buy price, a sell price and a quantity."
           goods={craftGoods}
-          expanded={open.craft || query.trim() !== ''}
+          // Collapsed by default only because the trade goods above it are the
+          // shorter, more commonly entered list. With nothing above it, a
+          // collapsed section is just a screen with nothing on it.
+          expanded={open.craft || query.trim() !== '' || tradeGoods.length === 0}
           onToggle={() => setOpen((s) => ({ ...s, craft: !s.craft }))}
           drafts={drafts}
           recorded={recorded}
@@ -367,6 +370,20 @@ function GoodRow({
 }) {
   const touched = Boolean(draft && (draft.buyText || draft.sellText || draft.stockText));
 
+  /**
+   * A trade good has no buy price on the Market tab -- confirmed in game on
+   * 2026-08-26: it shows one number per good, and that number is what the port
+   * pays you. So the field is not offered by default. Leaving an empty "Buy"
+   * box next to a sell price is an invitation to type the same number into
+   * both, which manufactures profit out of nothing (CLAUDE.md hard rule 1).
+   *
+   * It is still reachable, because "never seen" is not "cannot exist": if a
+   * buy price for a trade good turns up somewhere else in the game, it can be
+   * recorded without waiting for a deploy.
+   */
+  const [buyShown, setBuyShown] = useState(!good.isTradeGood);
+  const showBuy = buyShown || Boolean(draft?.buyText);
+
   return (
     <li
       className={`rounded-xl border p-3 ${
@@ -387,15 +404,17 @@ function GoodRow({
         {current?.isDemo ? ' · placeholder data, not a real sighting' : ''}
       </p>
 
-      <div className="mt-2 grid grid-cols-3 gap-2">
-        <Field
-          label="Buy"
-          hint="you pay"
-          value={draft?.buyText ?? ''}
-          onChange={(value) => onEdit(good.id, 'buyText', value)}
-          error={problemFor(good.id, 'buy')}
-          decimal
-        />
+      <div className={`mt-2 grid gap-2 ${showBuy ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {showBuy ? (
+          <Field
+            label="Buy"
+            hint="you pay"
+            value={draft?.buyText ?? ''}
+            onChange={(value) => onEdit(good.id, 'buyText', value)}
+            error={problemFor(good.id, 'buy')}
+            decimal
+          />
+        ) : null}
         <Field
           label="Sell"
           hint="you get"
@@ -412,6 +431,16 @@ function GoodRow({
           error={problemFor(good.id, 'stock')}
         />
       </div>
+
+      {showBuy ? null : (
+        <button
+          type="button"
+          onClick={() => setBuyShown(true)}
+          className="mt-2 min-h-11 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300"
+        >
+          The game shows a buy price for {good.name}? Add one.
+        </button>
+      )}
     </li>
   );
 }

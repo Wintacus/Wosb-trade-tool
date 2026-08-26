@@ -178,13 +178,18 @@ price into a fresh-looking one. The recorded value sits beside the field.
   anonymous sign-in in the dashboard. Check this first at the live URL.
 - **Nothing in Phase 2 or Phase 3 has been clicked through by a person at a
   live URL.** That is still the outstanding check.
-- **Open question for the user, asked but not yet answered:** the Market screen
-  shows ONE number per trade good (goods.json `_validationEvidence` records 20
-  of them at Fiji Bay). Decision 1 below says that number is a SELL price, which
-  means no trade good ever has a buy price and the calculator can never produce
-  a plan from real trade-good data. The entry screen takes both buy and sell for
-  every good so it works either way, but until this is settled, entering trade
-  goods may not make the route planner come alive.
+- **CONFIRMED IN GAME 2026-08-26, and it changes the product:** the Market tab
+  shows ONE number per trade good and **you can only sell to the port** — there
+  is no buy price for a trade good. Decision 1 below was right. The consequence
+  nobody had drawn out: the route planner's buy-here-sell-there model can never
+  recommend a trade good, no matter how much data is entered, because the buy
+  side does not exist. It works only on craft resources, which do have buy/sell
+  pairs. The entry screen no longer offers a Buy box on a trade good (an empty
+  one beside a sell price invites the same number in both, manufacturing profit
+  from nothing) but keeps one reachable per row in case a buy price turns up
+  elsewhere in the game. **What the tool should do for trade goods instead —
+  most likely "where do I sell what I am carrying" — is an open product
+  decision, put to the user and not yet answered. Do not decide it unilaterally.**
 - OCR (SPEC 7.2) deferred by the user on 2026-08-26: build manual entry, use it
   on a real port, then decide whether OCR is worth it.
 - Port state entry (tax %, faction, port level) is NOT in Phase 3's scope — the
