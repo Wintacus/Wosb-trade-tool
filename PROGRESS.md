@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-24 — Phase 2 complete (session 2). Phase 3 is next.
+Last updated: 2026-08-26 — Phase 3 manual entry built (session 3). OCR deferred by decision.
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -142,20 +142,60 @@ instead of 197M**. Two causes, both now rules in CLAUDE.md:
 
 Run `npm run tokens` before this session ends and add its row above.
 
-## Next — Phase 3 (Data Entry)
+## Done — Phase 3 so far (Data Entry)
 
-**State of play before you start:** Phase 2 is complete and green on branch
-`claude/phase-2-6gqs8q`, with **PR #6 open and NOT merged**. `main` is still the Phase 0/1
-status page. Decide with the user whether to merge #6 first — Phase 3 should branch from
-whatever ends up being the base, not stack silently on an unmerged branch.
+Branch `claude/phase-3-kickoff-37dj1t`, from a **merged** `main` — PR #6 was merged
+2026-08-26, so `main` is now the product UI, not the status page.
 
-SPEC.md section 7. Build manual entry first — it is the
-guaranteed path and OCR is only an accelerator (CLAUDE.md rule 6). The results screen
-already has an "add data" button wired to `onAddData`, which currently just returns to
-the route picker and says outright that entry is not built yet; that is the seam to
-pick up.
+**421 tests passing** (390 from Phase 2).
+
+- `api/anon-session.ts` mints the invisible contributor account. The database
+  refuses a submission from a signed-out visitor (`for insert to authenticated
+  with check (submitted_by = auth.uid())`), so an identity is mandatory before
+  anything can be saved. Supabase's own `signInAnonymously()` would do it but is
+  off by default and needs a dashboard toggle, which would be a manual step for
+  the user — so the endpoint creates the user with the service role key instead,
+  and the browser signs itself in with the publishable key.
+- `src/lib/identity.ts` — credentials in this browser's local storage, one
+  in-flight attempt shared by concurrent callers, profile row created on first
+  save (nothing creates it automatically and `submitted_by` is a FK to it).
+- `src/data/submit.ts` — parses prices from the digits rather than multiplying a
+  float, blank stays unknown, typed zero is saved, out-of-band warns but saves.
+- `src/ui/PriceEntry.tsx` — port → 61 goods in two collapsible sections with a
+  search, buy/sell/stock per row, sticky save bar. Reachable from the header
+  everywhere and from the results screen's "add data" button.
+
+**Fields deliberately start empty.** Pre-filling turns Save into re-affirming
+sixty numbers nobody looked at, with a fresh timestamp — laundering a stale
+price into a fresh-looking one. The recorded value sits beside the field.
+
+## Next
+
+- **The account-minting path has never run against real Supabase.** It is the
+  one part of this that cannot be proven in tests: if `POST /auth/v1/admin/users`
+  rejects the reserved `.invalid` email domain, the first save fails with a
+  readable error and the fallback is either a real domain or switching on
+  anonymous sign-in in the dashboard. Check this first at the live URL.
+- **Nothing in Phase 2 or Phase 3 has been clicked through by a person at a
+  live URL.** That is still the outstanding check.
+- **Open question for the user, asked but not yet answered:** the Market screen
+  shows ONE number per trade good (goods.json `_validationEvidence` records 20
+  of them at Fiji Bay). Decision 1 below says that number is a SELL price, which
+  means no trade good ever has a buy price and the calculator can never produce
+  a plan from real trade-good data. The entry screen takes both buy and sell for
+  every good so it works either way, but until this is settled, entering trade
+  goods may not make the route planner come alive.
+- OCR (SPEC 7.2) deferred by the user on 2026-08-26: build manual entry, use it
+  on a real port, then decide whether OCR is worth it.
+- Port state entry (tax %, faction, port level) is NOT in Phase 3's scope — the
+  user chose "prices + craft resources".
 
 ## Decisions already made — do not re-litigate
+
+-1. **Phase 3, decided by the user on 2026-08-26:** merge PR #6 before branching;
+   a silent anonymous account rather than an email sign-in or an open write
+   policy; entry covers trade goods AND craft resources but not port state; OCR
+   waits until manual entry has been used on a real port.
 
 0. **Phase 2 UI, decided by the user on 2026-08-24:** ship presets live in this
    browser's storage only (no silent account, nothing to switch on in Supabase);
