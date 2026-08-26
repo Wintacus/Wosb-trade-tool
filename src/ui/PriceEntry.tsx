@@ -431,25 +431,38 @@ function GoodRow({
         touched ? 'border-amber-400/50 bg-amber-400/5' : 'border-slate-800 bg-slate-950/40'
       }`}
     >
+      {/*
+        The NAME owns the first line and never yields it.
+        A first attempt put the name and the "on record" summary on one line,
+        with the summary shrink-0. At a port that actually had data the summary
+        ("buy 7.0 · sell 7.0 · stock not shown" plus a badge) took the whole
+        width and squeezed the name to nothing — the goods list became a column
+        of prices with no way to tell what any of them were. It survived
+        testing because the fixture had no recorded prices, so only the short
+        "not recorded here" branch ever rendered. min-w-0 is what lets a
+        truncating flex child shrink below its content at all.
+      */}
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate font-medium text-slate-100">{good.name}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-slate-100">
+          {good.name}
+        </span>
         {current ? (
-          <span className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-slate-500">{reference(current)}</span>
-            <FreshnessBadge
-              observedAt={current.observedAt}
-              now={now}
-              thresholds={thresholds}
-              showAge={false}
-            />
-          </span>
+          <FreshnessBadge
+            observedAt={current.observedAt}
+            now={now}
+            thresholds={thresholds}
+            showAge={false}
+          />
         ) : (
           <span className="shrink-0 text-xs text-slate-600">not recorded here</span>
         )}
       </div>
 
-      {current?.isDemo ? (
-        <p className="text-xs text-amber-200/70">placeholder data, not a real sighting</p>
+      {current ? (
+        <p className="truncate text-xs text-slate-500">
+          {reference(current)}
+          {current.isDemo ? ' · placeholder, not a real sighting' : ''}
+        </p>
       ) : null}
 
       <div className={`mt-1.5 grid gap-2 ${buy ? 'grid-cols-3' : 'grid-cols-2'}`}>

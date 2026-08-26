@@ -202,6 +202,19 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
+- **The compaction below then hid every good's NAME, and the check missed it
+  for an instructive reason.** The name shared a flex row with the "on record"
+  summary; the summary was `shrink-0` and wide ("buy 7.0 · sell 7.0 · stock not
+  shown" plus a badge), so the truncating name was squeezed to ~34px. The goods
+  list became a column of prices with nothing identifying them. **It passed
+  verification because `verify-ui.mjs` had `prices_current: []` — with nothing
+  on record, every row took the short "not recorded here" branch and the wide
+  one never rendered.** A fixture with no data only ever tests the empty state.
+  Fixed by giving the name its own line with `min-w-0`, and the fixture now
+  carries a full set of stale, half-demo prices at the port the sheet opens on.
+  New check `every good row shows its name` measures the rendered BOX, not the
+  text — a zero-width truncated element still has its text in the DOM. Proven
+  by restoring the broken version: it failed at 32–34px, passes at 238px.
 - **Entry sheet compacted 2026-08-26 — measured, not guessed.** Each good's row
   was **202px** tall, exactly **2 fitted** a 430x740 phone, and the 20 trade
   goods took **6.8 screens** of scrolling (all 61: 15.5). SPEC 7.1 asks this

@@ -84,7 +84,32 @@ const TABLES = {
   upgrades: [],
   servers: [{ id: 'na', name: 'North America' }],
   port_state_current: [],
-  prices_current: [],
+  // Prices at the port the entry sheet opens on.
+  //
+  // This list used to be EMPTY, and that is exactly how a real bug shipped:
+  // with nothing on record every good rendered the short "not recorded here"
+  // branch, so the populated row -- the one carrying "buy 7.0 · sell 7.0 ·
+  // stock not shown" plus a freshness badge -- was never drawn here, and the
+  // good's NAME being squeezed to zero width by it went unseen until a phone
+  // found it. A fixture with no data only ever tests the empty state.
+  prices_current: (() => {
+    const port = rawPorts.find((p) => (p.displayName ?? p.name) === 'Al-Khalif');
+    if (!port) return [];
+    const stale = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
+    return rawGoods.map((g, i) => ({
+      server_id: 'na',
+      port_id: port.id,
+      good_id: g.id,
+      // Deliberately the widest shape the row can take: every field present,
+      // a long "stock not shown", and a demo flag adding its own note.
+      buy_price: (g.minPrice ?? 5) * 10,
+      sell_price: (g.minPrice ?? 5) * 10,
+      stock: null,
+      observed_at: stale,
+      is_demo: i % 2 === 0,
+      source: i % 2 === 0 ? 'demo' : 'manual',
+    }));
+  })(),
 };
 
 const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
@@ -211,6 +236,47 @@ try {
     }
   } else {
     fail('typed prices survive a reload', 'no price input found to type into');
+  }
+
+  // --- every good's NAME is actually readable ---------------------------
+  //
+  // Reported from a phone 2026-08-26: after the row was compacted the goods
+  // list became a column of prices with no way to tell what any of them were.
+  // The name shared a flex row with the "on record" summary, the summary was
+  // shrink-0 and wide ("buy 7.0 · sell 7.0 · stock not shown" plus a badge),
+  // and the name -- which truncates -- was squeezed to zero width. It needed
+  // min-w-0 to shrink correctly and, better, its own line.
+  //
+  // Checking the TEXT is not enough: a zero-width truncated element still has
+  // its text in the DOM. This measures the rendered box.
+  {
+    const names = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('li')].filter((li) =>
+        li.querySelector('input[inputmode]'),
+      );
+      return rows.slice(0, 8).map((row) => {
+        const el = row.querySelector('span');
+        const rect = el?.getBoundingClientRect();
+        return {
+          text: (el?.textContent ?? '').trim(),
+          width: rect ? Math.round(rect.width) : 0,
+        };
+      });
+    });
+    const unreadable = names.filter((n) => !n.text || n.width < 40);
+    if (names.length > 0 && unreadable.length === 0) {
+      pass(
+        'every good row shows its name',
+        `${names.length} checked, narrowest ${Math.min(...names.map((n) => n.width))}px e.g. "${names[0].text}"`,
+      );
+    } else {
+      fail(
+        'every good row shows its name',
+        names.length === 0
+          ? 'no good rows rendered at all'
+          : `${unreadable.length} row(s) with no readable name: ${JSON.stringify(unreadable.slice(0, 3))}`,
+      );
+    }
   }
 
   // --- the entry sheet stays quick on a phone ---------------------------

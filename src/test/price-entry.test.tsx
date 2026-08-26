@@ -88,7 +88,7 @@ describe('the entry screen renders', () => {
 
   it('marks placeholder data as placeholder', () => {
     const html = render('fiji', [makePrice('fiji', 'sugar', { sell: 400 }, { isDemo: true })]);
-    expect(html).toContain('placeholder data');
+    expect(html).toContain('placeholder, not a real sighting');
   });
 
   it('offers no buy field for a trade good, but keeps one reachable', () => {
