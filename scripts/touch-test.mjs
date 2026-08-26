@@ -1020,6 +1020,62 @@ try {
     );
   }
 
+  // --- AN EDGE PORT CAN BE BROUGHT TO THE MIDDLE OF THE SCREEN ----------
+  //
+  // Reported by the user on 2026-08-26, after the EDGE_MARGIN fix above had
+  // already shipped: "the map just stops abruptly, you can't scroll further
+  // left, right, up, or down and it leaves these ports just so close to the
+  // edge and they start to get cut off... give us a little more room so we
+  // can center those edge ports better."
+  //
+  // They were right, and the checks above could not see it. Every earlier
+  // reachability check asks only whether an extreme port is ON SCREEN. It
+  // was -- pinned EDGE_MARGIN px from the edge, which is on screen and
+  // useless: the label runs off, the marker sits under the zoom controls,
+  // and there is no pan left to fix it because that IS the clamp's limit.
+  //
+  // "On screen" was the wrong bar. The real requirement is that any port can
+  // be brought somewhere near the middle, where it can actually be read and
+  // tapped. This asserts that directly.
+  for (const wanted of [2, 4]) {
+    const stuck = [];
+    for (const which of ['leftmost', 'rightmost', 'topmost', 'bottommost']) {
+      await freshMap();
+      const box = await mapArea();
+      const zoomed = await zoomBy(Math.log2(wanted), box);
+      const target = extremesOf(zoomed)[which];
+      // panToLimit, NOT panToward: panToward returns the moment the port is
+      // merely on screen, which is precisely the inadequate bar this check
+      // exists to replace. The question here is how far the map can actually
+      // go, so drag the same way until the clamp refuses to move it.
+      const horizontal = which === 'leftmost' || which === 'rightmost';
+      const towards =
+        which === 'leftmost' ? [240, 0]
+        : which === 'rightmost' ? [-240, 0]
+        : which === 'topmost' ? [0, 360]
+        : [0, -360];
+      const settled = await panToLimit(towards[0], towards[1], box);
+      const port = settled.positions.find((p) => p.name === target.name);
+      const centre = horizontal ? settled.W / 2 : settled.H / 2;
+      const got = horizontal ? port.x : port.y;
+      const offBy = Math.abs(got - centre);
+      // Within a quarter of the screen of dead centre counts as centred:
+      // comfortably clear of the edge, the labels and the zoom controls.
+      const allowed = (horizontal ? settled.W : settled.H) / 4;
+      if (offBy > allowed) {
+        stuck.push(
+          `${which} ${target.name} stops ${Math.round(offBy)}px from centre (allowed ${Math.round(allowed)})`,
+        );
+        await shoot(`stuck-at-edge-scale${wanted}-${which}`);
+      }
+    }
+    check(
+      `an edge port can be panned near the middle of the screen at scale ${wanted}`,
+      stuck.length === 0,
+      stuck.length === 0 ? 'all four extremes reach the middle' : stuck.join('; '),
+    );
+  }
+
   // --- OVERSCROLL -------------------------------------------------------
   //
   // There is no spring-back animation in this map, so whatever the clamp

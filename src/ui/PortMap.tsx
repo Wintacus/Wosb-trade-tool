@@ -130,28 +130,78 @@ const FALLBACK_SIZE = { width: 360, height: 480 };
  *    stranding 31 of the 42 ports off screen with no spring-back — this map
  *    has no inertia or animation to bring them home.
  */
+/**
+ * How much of the extra pan room applies, from 0 at the fitted view to 1 once
+ * zoomed to 2x or beyond.
+ *
+ * Driven by the zoom the user actually chose, NOT by how the content's span
+ * compares to the screen. Span was tried first and is subtly wrong: the map is
+ * letterboxed, so one axis has slack at the fitted view and the other does
+ * not, and the same zoom therefore produced different freedom per axis — the
+ * vertical axis came up 24px short of centring at 2x while the horizontal was
+ * fine. Zoom is the thing the user is aware of, and it treats both axes alike.
+ */
+function panFreedom(scale: number): number {
+  return Math.min(1, Math.max(0, scale - 1));
+}
+
 function clampAxis(
   offset: number,
   contentMin: number,
   contentMax: number,
   viewport: number,
   margin: number,
+  freedom: number,
 ): number {
   const lo = margin;
   const hi = viewport - margin;
   const span = contentMax - contentMin;
-  if (span <= hi - lo) {
-    // Smaller than the screen: it may slide within the slack, but never far
-    // enough for any of it to leave. Locking it dead centre instead was worse
-    // than it sounds — a locked axis silently overrides the pinch anchor, and
-    // the port under the fingers drifted 53px because it could not follow
-    // them vertically.
-    return Math.max(lo - contentMin, Math.min(hi - contentMax, offset));
-  }
-  // Larger than the screen: the screen must stay inside it, so panning stops
-  // when an edge meets an edge. Going further shows blank sea with nothing to
-  // navigate by.
-  return Math.max(hi - contentMax, Math.min(lo - contentMin, offset));
+
+  // The limits at the fitted view, where the map should still sit still.
+  //
+  //  - Content SMALLER than the screen: it may slide within the slack but
+  //    never far enough for any of it to leave. Locking it dead centre
+  //    instead was worse than it sounds — a locked axis silently overrides
+  //    the pinch anchor, and the port under the fingers drifted 53px because
+  //    it could not follow them vertically.
+  //  - Content LARGER: the screen stays inside it, so panning stops when an
+  //    edge meets an edge. Going further showed blank sea at 4x with nothing
+  //    to navigate by.
+  const fits = span <= hi - lo;
+  const restingLower = fits ? lo - contentMin : hi - contentMax;
+  const restingUpper = fits ? hi - contentMax : lo - contentMin;
+
+  // The limits once zoomed in, where either outermost port can be brought to
+  // the MIDDLE of the screen instead of being pinned near its edge.
+  //
+  // Edge-meets-edge was the obvious rule and it was wrong in use: it stops the
+  // outermost port a couple of dozen pixels from the edge and stops dead — on
+  // screen, technically, but with its label running off, its marker under the
+  // zoom controls, and no pan left to improve it, because that position IS the
+  // limit. Reported as "it stops abruptly... it leaves these ports so close to
+  // the edge and they start to get cut off". Every earlier check missed it
+  // because they all asked whether a port was *on screen* rather than whether
+  // it could be brought somewhere usable.
+  //
+  // This applies to BOTH cases above, which the first attempt at this fix got
+  // wrong: it loosened only the larger-than-screen case, and the map is
+  // letterboxed — on a tall phone the ports span far less height than width,
+  // so the vertical axis is still "smaller than the screen" even at 2x and
+  // stayed stuck 195px short of centre.
+  const centre = viewport / 2;
+  const centredLower = centre - contentMax;
+  const centredUpper = centre - contentMin;
+
+  // `freedom` (0..1) phases that room in with zoom — see panFreedom. Granting
+  // it at the fitted view lets the whole map be shoved off into empty sea for
+  // no reason, which a test caught immediately.
+  //
+  // The cost is a screenful of empty sea at the very limit. That is a fair
+  // trade for every port being readable and tappable, and there is always at
+  // least one port in view: the one just centred.
+  const lower = restingLower + (centredLower - restingLower) * freedom;
+  const upper = restingUpper + (centredUpper - restingUpper) * freedom;
+  return Math.max(lower, Math.min(upper, offset));
 }
 
 interface Pointer {
@@ -317,9 +367,10 @@ export function PortMap({
    */
   function clampOffset(next: { x: number; y: number }, atScale: number) {
     const { minX, minY, maxX, maxY } = contentBounds;
+    const freedom = panFreedom(atScale);
     return {
-      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width, EDGE_MARGIN),
-      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height, EDGE_MARGIN),
+      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width, EDGE_MARGIN, freedom),
+      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height, EDGE_MARGIN, freedom),
     };
   }
 

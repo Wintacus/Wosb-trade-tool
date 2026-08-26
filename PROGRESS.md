@@ -241,9 +241,28 @@ price into a fresh-looking one. The recorded value sits beside the field.
   reachable per row. **Agreed with the user: redesign toward "I am holding
   this, where do I sell it" — not started, and explicitly to be done step by
   step after the current bugs are confirmed fixed live.**
+- **Map pan room, fixed 2026-08-26 (user-reported, third map round).** The
+  clamp stopped panning at edge-meets-edge, pinning the outermost port
+  EDGE_MARGIN px from the screen edge with no pan left to improve it — on
+  screen, but with its label running off and its marker under the zoom
+  controls. Measured before the fix: extremes stopped 161–320px from centre.
+  `clampAxis` now blends from the resting limits toward "either outermost port
+  can reach the middle of the screen", phased in by `panFreedom(scale)` — 0 at
+  the fitted view (so the map still sits still there; loosening it flat broke
+  the overscroll check immediately) and 1 by 2x zoom. **Two wrong turns worth
+  not repeating:** ramping on content span rather than zoom is aspect-ratio
+  dependent and left the vertical axis 24px short; and loosening only the
+  larger-than-screen branch missed that a tall phone letterboxes the map, so
+  the vertical axis is still "smaller than the screen" even at 2x. Both
+  branches now share one ramp. Pinned by a new check, `an edge port can be
+  panned near the middle of the screen`, which FAILED before the fix — and
+  which had to be rewritten to use `panToLimit` rather than `panToward`,
+  because panToward returns as soon as a port is merely on screen, the exact
+  inadequate bar the check exists to replace. 31/31 touch checks.
 - **Found but NOT fixed:** the map's zoom +/−/reset buttons are pinned to a
-  fixed screen corner and do not move with pan/zoom, so they cover whatever
-  port pans underneath them. Real, seen in a screenshot, needs a design call.
+  fixed screen corner and do not move with pan/zoom, so they can sit over a
+  port that pans underneath them. Real, seen in a screenshot, needs a design
+  call. Less pressing now that any port can be brought to the middle.
 - OCR (SPEC 7.2) still deferred until manual entry has been used on a real port.
 - Port state entry (tax %, faction, port level) is NOT in Phase 3's scope.
 
