@@ -1,6 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // The same build-time constants vite.config.ts bakes in. This config is
+  // separate from the app's, so without repeating them here every component
+  // that renders the footer throws under test with "__BUILD_SHA__ is not
+  // defined" — which is exactly how this was caught.
+  define: {
+    __BUILD_SHA__: JSON.stringify('test'),
+    __BUILD_TIME__: JSON.stringify('1970-01-01T00:00:00.000Z'),
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

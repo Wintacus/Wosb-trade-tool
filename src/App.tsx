@@ -454,13 +454,24 @@ function Shell({
         <main className="flex flex-col gap-5">{children}</main>
 
         <footer className="mt-auto flex flex-col gap-2 pt-6 text-xs leading-relaxed text-slate-500">
-          <button
-            type="button"
-            onClick={onShowDiagnostics}
-            className="self-start underline underline-offset-2 hover:text-slate-300"
-          >
-            Database checks
-          </button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button
+              type="button"
+              onClick={onShowDiagnostics}
+              className="underline underline-offset-2 hover:text-slate-300"
+            >
+              Database checks
+            </button>
+            {/*
+              Which build you are actually looking at.
+              A fix was twice reported as still broken when the phone was
+              simply showing a cached or not-yet-finished deploy, and neither
+              side could tell. Now the page says so itself.
+            */}
+            <span className="font-mono text-slate-600" title={`Built ${__BUILD_TIME__}`}>
+              build {__BUILD_SHA__}
+            </span>
+          </div>
           <p>
             Not affiliated with, endorsed by, or connected to the developers of World of Sea
             Battle. Game data is community-contributed and may be wrong or out of date.

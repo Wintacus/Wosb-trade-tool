@@ -17,5 +17,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node", "vitest/globals", "vite/client"]
   },
-  "include": ["src/test"]
+  "include": ["src/test", "src/build-info.d.ts"]
 }
