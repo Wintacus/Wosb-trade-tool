@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { rmSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from './pg';
 
@@ -21,6 +21,19 @@ import { repoRoot } from './pg';
 
 const OUT = join(repoRoot, '.apitest');
 
+/**
+ * Every TypeScript file in api/, discovered rather than listed.
+ *
+ * A hand-maintained list silently stops covering the newest endpoint, which is
+ * exactly the one most likely to have the import mistake this file exists to
+ * catch.
+ */
+function apiSources(): string[] {
+  return readdirSync(join(repoRoot, 'api'))
+    .filter((name) => name.endsWith('.ts'))
+    .sort();
+}
+
 function buildAndRun(script: string): string {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
@@ -29,10 +42,7 @@ function buildAndRun(script: string): string {
     'npx',
     [
       'esbuild',
-      'api/migrate.ts',
-      'api/_page.ts',
-      'api/_sql.ts',
-      'api/_auto.ts',
+      ...apiSources().map((file) => `api/${file}`),
       `--outdir=${OUT}`,
       '--format=esm',
       '--platform=node',
@@ -110,18 +120,62 @@ describe('the deployed function survives real Node ESM', () => {
   }, 120_000);
 });
 
+describe('the account-minting endpoint survives real Node ESM', () => {
+  test('loads, refuses GET, and says so plainly when unconfigured', () => {
+    const output = buildAndRun(`
+      delete process.env.VITE_SUPABASE_URL;
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const m = await import('${OUT}/anon-session.js');
+      const run = async (method) => {
+        let code = 0, body = '';
+        const res = {
+          status(c) { code = c; return res; },
+          json(j) { body = JSON.stringify(j); },
+          setHeader() {},
+        };
+        await m.default({ method, headers: {} }, res);
+        return { code, body };
+      };
+      const get = await run('GET');
+      const post = await run('POST');
+      console.log(JSON.stringify({
+        get: get.code,
+        post: post.code,
+        explains: post.body.includes('SUPABASE_SERVICE_ROLE_KEY'),
+      }));
+    `);
+    const result = JSON.parse(output.trim().split('\n').pop()!);
+    // 405 for the wrong verb, 500 with a readable reason when the deployment
+    // has no credentials -- never a blank FUNCTION_INVOCATION_FAILED.
+    expect(result).toEqual({ get: 405, post: 500, explains: true });
+  }, 120_000);
+
+  test('a burst from one caller is throttled', () => {
+    const output = buildAndRun(`
+      const m = await import('${OUT}/anon-session.js');
+      const results = [];
+      for (let i = 0; i < 8; i++) results.push(m.rateLimited('1.2.3.4'));
+      // A different caller is unaffected by the first one's burst.
+      results.push(m.rateLimited('5.6.7.8'));
+      console.log(JSON.stringify(results));
+    `);
+    const results = JSON.parse(output.trim().split('\n').pop()!) as boolean[];
+    expect(results.slice(0, 5)).toEqual([false, false, false, false, false]);
+    expect(results.slice(5, 8)).toEqual([true, true, true]);
+    expect(results[8]).toBe(false);
+  }, 120_000);
+});
+
 describe('relative imports carry the extension Node requires', () => {
   test('no extensionless relative import survives in api/', () => {
     // The exact mistake that broke the deployment. TypeScript is now configured
     // with nodenext so it enforces this too, but the check is cheap and the
     // failure was expensive.
-    const files = ['migrate.ts', '_page.ts', '_sql.ts', '_auto.ts'];
     const offenders: string[] = [];
 
-    for (const file of files) {
-      const source = execFileSync('cat', [join(repoRoot, 'api', file)], {
-        encoding: 'utf8',
-      });
+    for (const file of apiSources()) {
+      const source = readFileSync(join(repoRoot, 'api', file), 'utf8');
       for (const match of source.matchAll(/from\s+'(\.[^']*)'/g)) {
         const specifier = match[1]!;
         if (!specifier.endsWith('.js')) offenders.push(`api/${file}: ${specifier}`);
