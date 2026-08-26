@@ -228,10 +228,14 @@ price into a fresh-looking one. The recorded value sits beside the field.
   `VERCEL_GIT_COMMIT_SHA`). Two rounds were lost to nobody being able to tell
   whether the phone was showing new code, a cached bundle, or an unfinished
   deploy. Ask the user to read it before debugging anything they report.
-- **The account-minting path has never run against real Supabase.** If
-  `POST /auth/v1/admin/users` rejects the reserved `.invalid` email domain the
-  first save fails; fallback is a real domain or enabling anonymous sign-in.
-  Still the first thing to check live.
+- **CONFIRMED WORKING END TO END on a real phone, 2026-08-26.** The user
+  entered a price at Al-Khalif and saw "Saved 1 observation". That single
+  screenshot proves the whole chain the tests could not: `/api/anon-session`
+  minting a real Supabase user with the reserved `.invalid` email domain, the
+  browser signing in with it, the profile row being created, and the RLS
+  insert into `price_submissions` being accepted. **This was the biggest open
+  unknown in Phase 3 and it is closed.** The `.invalid` domain is fine; no
+  fallback to a real domain or to dashboard anonymous sign-in is needed.
 - **CONFIRMED IN GAME 2026-08-26:** the Market tab shows ONE number per trade
   good and **you can only sell to the port** — there is no buy price for a
   trade good, and the user believes they are acquired by looting. The route
