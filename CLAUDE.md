@@ -63,6 +63,16 @@ If the calculator used a value marked unverified (docking fee, faction discount,
 ### 6. Manual entry must always work
 OCR is an accelerator. If OCR is broken, removed, or never finished, the app must remain fully usable.
 
+### 7. Never report something as fixed or working without actually driving it
+Passing unit tests, a clean typecheck, and a subagent's own "verified" claim are not proof — on 2026-08-26 all three held while two real UI bugs shipped anyway (a button that looked like it wiped the app, a map with a quarter of its screen eaten by chrome). Before telling the user something works:
+
+- If the deployed preview is reachable, load it and use the actual feature.
+- If it isn't (this sandbox usually can't reach `*.vercel.app`), drive the real, unmodified component in headless Chromium instead of reasoning from the diff. There is no local Supabase here — mock `page.route('**/rest/v1/**', ...)` with real rows from `data/*.json` reshaped to the snake_case columns `src/data/mappers.ts` expects, point Vite at a fake `VITE_SUPABASE_URL`, and click through the exact sequence reported. This is cheap, catches what tests can't, and is how both bugs above were actually found (not guessed at).
+- A subagent reporting "verified, 427 tests pass" means it checked its own work, not that you have. Re-read its diff and re-run the check yourself before relaying its claim as fact.
+- If neither the live app nor a local run is possible, say exactly that — "I could not verify this, here's why" — instead of reporting success.
+
+Skipping this step is not a shortcut, it is the thing that has twice cost a full round-trip of the user's trust.
+
 ---
 
 ## Architecture reminders
