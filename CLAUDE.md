@@ -63,15 +63,28 @@ If the calculator used a value marked unverified (docking fee, faction discount,
 ### 6. Manual entry must always work
 OCR is an accelerator. If OCR is broken, removed, or never finished, the app must remain fully usable.
 
-### 7. Never report something as fixed or working without actually driving it
-Passing unit tests, a clean typecheck, and a subagent's own "verified" claim are not proof — on 2026-08-26 all three held while two real UI bugs shipped anyway (a button that looked like it wiped the app, a map with a quarter of its screen eaten by chrome). Before telling the user something works:
+### 7. Reproduce the reported symptom before you write a single line of fix
+**This rule replaced a weaker one that said "verify before reporting". That version failed on the very next round, because verifying is not the hard part — verifying *the right thing* is.**
 
-- If the deployed preview is reachable, load it and use the actual feature.
-- If it isn't (this sandbox usually can't reach `*.vercel.app`), drive the real, unmodified component in headless Chromium instead of reasoning from the diff. There is no local Supabase here — mock `page.route('**/rest/v1/**', ...)` with real rows from `data/*.json` reshaped to the snake_case columns `src/data/mappers.ts` expects, point Vite at a fake `VITE_SUPABASE_URL`, and click through the exact sequence reported. This is cheap, catches what tests can't, and is how both bugs above were actually found (not guessed at).
+The actual failure mode, measured across four rounds on 2026-08-26:
+
+1. User reports a symptom in their own words ("it resets the screen").
+2. Claude forms a theory about which code causes it.
+3. Claude verifies **the theory** — drives the button, watches it work, reports "fixed".
+4. The theory was wrong. The symptom is untouched. The user is now angrier and has less reason to trust anything.
+
+Rounds 3 and 4 involved genuine browser testing and still shipped broken, because the wrong thing was under test. The real bug was that **the app lost all state on a page reload** — iOS Safari discards backgrounded tabs, and this tool is used by switching to the game and back constantly. No amount of clicking buttons in a desktop browser reveals that. Reloading the page reveals it in seconds.
+
+So the order is not negotiable:
+
+- **First, reproduce the symptom the user described, in their words, before theorising about causes.** Not the nearest thing you can think of — the actual thing. If they say "it wipes everything", your job is to make something get wiped. If they say "it's cut off", measure what is cut off.
+- **If you cannot reproduce it, say so and ask for one more detail.** Do not fix on a theory. A fix aimed at an unreproduced symptom is a guess wearing a lab coat, and it costs a full round-trip every time.
+- **Then fix it, then show the same reproduction now passes.** The before and the after must be the same test.
+- **Match the user's real conditions, not convenient ones.** Phone viewport, not desktop. Reload the page — they switch apps constantly. Slow network, empty database, a port with no data. Most bugs here have lived in conditions the sandbox does not reach by default.
 - A subagent reporting "verified, 427 tests pass" means it checked its own work, not that you have. Re-read its diff and re-run the check yourself before relaying its claim as fact.
-- If neither the live app nor a local run is possible, say exactly that — "I could not verify this, here's why" — instead of reporting success.
+- If you truly cannot check, say exactly that — "I could not verify this, here's why" — and never dress it up as done.
 
-Skipping this step is not a shortcut, it is the thing that has twice cost a full round-trip of the user's trust.
+**This is enforced mechanically, not on trust.** `npm run verify` drives the real app in a real browser (including a reload) and writes `.verified`. The `Stop` hook in `.claude/settings.json` refuses to end a turn where `src/` or `api/` changed without a matching, current `.verified`. It hashes file contents, so "verify, then one more tweak" invalidates it. Do not weaken or bypass that hook; add checks to `scripts/verify-ui.mjs` as new symptoms are found, so each one stays fixed.
 
 ---
 

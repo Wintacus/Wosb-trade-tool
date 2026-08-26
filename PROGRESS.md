@@ -202,88 +202,50 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
-- **User reported two things broken live, 2026-08-26, after the 504 fix and the
-  map edge-clamp fix both shipped.** Neither turned out to be what a fresh
-  guess would have said. Both diagnosed by actually driving the real,
-  unmodified `App.tsx`/`PortMap.tsx` in headless Chromium with a mocked
-  `/rest/v1/**` (real `data/*.json` as fixtures) rather than guessing from the
-  code — no live Supabase credentials exist in this sandbox, so this is the
-  only way to see the actual app run here. Should have reached for this
-  before either of the two subagent fixes, not after a second complaint.
-  1. **"Add Prices" felt like it reset the whole app.** It didn't — no state
-     was lost, confirmed by rendering the exact click sequence. The header's
-     "+ Add prices" button opened `PriceEntry` with `portId: null`, which
-     shows "Which port are you at?" using the *exact same* `<PortPicker>`
-     component as step 1 of the main flow — pixel-identical search box and
-     port list. On a phone, with a route and ship already chosen, that reads
-     as "it forgot everything," even though closing it (Cancel/Done) returns
-     to the untouched route. Fixed in `src/App.tsx`: the header button now
-     defaults to `origin?.id ?? destination?.id ?? null`, so it only asks
-     "which port" when there is truly no port in context yet — otherwise it
-     goes straight to that port's price list, matching the Results screen's
-     own "Add prices for these ports" button.
-  2. **"Give me more room, it's still cut off" on the map.** Real, measured,
-     not a misperception: on a 430×740 phone viewport the map dialog's
-     header+footer chrome ate 194px — **26.2% of the screen** — before the
-     map canvas got any of it, mostly an always-visible two-line legend plus
-     redundant instructional text ("Tap a port to see it here" duplicating
-     the header subtitle). Trimmed in `src/ui/PortMap.tsx`: one-line header
-     (title + count, no separate subtitle), one-line empty-state footer text,
-     legend compressed to a single non-wrapping row. Now 160px / **21.6%**.
-     Verified both by direct measurement (`getBoundingClientRect` on the
-     header/surface/footer) and by re-running `scripts/touch-test.mjs`
-     (still 29/29 — no tap target or reachability regression).
-     **Found but NOT fixed:** the zoom +/−/reset button stack is
-     `position: absolute` at a fixed screen corner (bottom-right) and does
-     not move with pan/zoom, so it visibly covers whatever port happens to
-     pan underneath it — seen directly in a screenshot obscuring a port's
-     label. This is a separate, real contributor to "not enough room" and is
-     the next thing to fix here; it wasn't touched this round because it
-     needs a design call (shrink the buttons? let markers avoid that corner?
-     something else?) rather than an obvious one-line fix.
-  **Neither fix has been seen on a real phone yet — both are provable in
-  Chromium and by measurement, but the live check is still outstanding.**
-- **First live save hit a bare 504** ("Could not create a contributor account
-  (504)") — an unparseable body, meaning Vercel's own platform gateway killed
-  the function, not `anon-session.ts` returning one itself (it never sends
-  504). Root cause is unverified (no access to Vercel/Supabase logs from a
-  session), but the endpoint had two real weaknesses: no top-level try/catch,
-  and no timeout on the `fetch()` to Supabase's admin API, so a hang had
-  nothing bounding it except the platform's own opaque limit. Hardened
-  2026-08-26: try/catch matching `migrate.ts`, an 8s `AbortController` timeout
-  around that fetch (503/504 with a readable body instead), `maxDuration`
-  dropped 15→10 (realistic Hobby-tier ceiling), and one client-side retry in
-  `mintCredentials()`. Proven with two new tests in
-  `serverless-runtime.test.ts` (thrown error → JSON; hung/unreachable upstream
-  via `192.0.2.1` → bounded readable response) and two in `submit.test.ts`
-  (retry-then-succeed, two-failures-surfaces-error). **Ask the user to try
-  saving again at the preview URL — that's the only check that can confirm
-  this. A repeat bare 504 after this fix would mean the hang is on Vercel's or
-  Supabase's side, not in this code, since 8s is now well inside anything
-  Vercel would allow.**
-- **The account-minting path has never run against real Supabase.** It is the
-  one part of this that cannot be proven in tests: if `POST /auth/v1/admin/users`
-  rejects the reserved `.invalid` email domain, the first save fails with a
-  readable error and the fallback is either a real domain or switching on
-  anonymous sign-in in the dashboard. Check this first at the live URL.
-- **Nothing in Phase 2 or Phase 3 has been clicked through by a person at a
-  live URL.** That is still the outstanding check.
-- **CONFIRMED IN GAME 2026-08-26, and it changes the product:** the Market tab
-  shows ONE number per trade good and **you can only sell to the port** — there
-  is no buy price for a trade good. Decision 1 below was right. The consequence
-  nobody had drawn out: the route planner's buy-here-sell-there model can never
-  recommend a trade good, no matter how much data is entered, because the buy
-  side does not exist. It works only on craft resources, which do have buy/sell
-  pairs. The entry screen no longer offers a Buy box on a trade good (an empty
-  one beside a sell price invites the same number in both, manufacturing profit
-  from nothing) but keeps one reachable per row in case a buy price turns up
-  elsewhere in the game. **What the tool should do for trade goods instead —
-  most likely "where do I sell what I am carrying" — is an open product
-  decision, put to the user and not yet answered. Do not decide it unilaterally.**
-- OCR (SPEC 7.2) deferred by the user on 2026-08-26: build manual entry, use it
-  on a real port, then decide whether OCR is worth it.
-- Port state entry (tax %, faction, port level) is NOT in Phase 3's scope — the
-  user chose "prices + craft resources".
+- **THE bug, found 2026-08-26 after three wrong diagnoses: the app lost every
+  bit of in-flight work on a page reload.** Route, ship and every typed price
+  lived only in React state. iOS Safari discards a backgrounded tab whenever it
+  wants the memory — and this tool's entire workflow is switching to the game to
+  read a price and switching back. So the app appeared to reset itself at
+  random, which is exactly how the user described it three times ("it wipes
+  everything... and then it just resets again") while three rounds of fixes
+  were aimed at buttons instead. Fixed by `src/lib/session.ts`: step, ports,
+  ship and unsaved drafts persist to localStorage on every change and restore
+  on load, expiring after 12h so a stale route is not resumed the next day.
+  **No desktop browser ever discards a tab, so nothing but an explicit reload
+  could have caught this.** `scripts/verify-ui.mjs` now reloads.
+- **Verification is mechanical now, because writing it down failed twice.**
+  `npm run verify` drives the real app in real Chromium at phone size — the
+  four-step flow, a reload, the Add-prices path, typed prices surviving a
+  reload — and writes `.verified` with a hash of every source file's contents.
+  The `Stop` hook in `.claude/settings.json` refuses to end a turn where
+  `src/` or `api/` changed without a matching `.verified`, so "verified, then
+  one more tweak, then reported success" is now blocked rather than discouraged.
+  Add a check to that script for every new symptom found. CLAUDE.md hard rule 7
+  was rewritten from "verify before reporting" to "reproduce the user's symptom
+  before writing any fix", which is the step that was actually missing.
+- **A build stamp is in the footer** (`build <sha>`, from
+  `VERCEL_GIT_COMMIT_SHA`). Two rounds were lost to nobody being able to tell
+  whether the phone was showing new code, a cached bundle, or an unfinished
+  deploy. Ask the user to read it before debugging anything they report.
+- **The account-minting path has never run against real Supabase.** If
+  `POST /auth/v1/admin/users` rejects the reserved `.invalid` email domain the
+  first save fails; fallback is a real domain or enabling anonymous sign-in.
+  Still the first thing to check live.
+- **CONFIRMED IN GAME 2026-08-26:** the Market tab shows ONE number per trade
+  good and **you can only sell to the port** — there is no buy price for a
+  trade good, and the user believes they are acquired by looting. The route
+  planner's buy-here-sell-there model therefore can never recommend a trade
+  good; it works only on craft resources, which do have buy/sell pairs. The
+  entry screen no longer offers a Buy box on a trade good but keeps one
+  reachable per row. **Agreed with the user: redesign toward "I am holding
+  this, where do I sell it" — not started, and explicitly to be done step by
+  step after the current bugs are confirmed fixed live.**
+- **Found but NOT fixed:** the map's zoom +/−/reset buttons are pinned to a
+  fixed screen corner and do not move with pan/zoom, so they cover whatever
+  port pans underneath them. Real, seen in a screenshot, needs a design call.
+- OCR (SPEC 7.2) still deferred until manual entry has been used on a real port.
+- Port state entry (tax %, faction, port level) is NOT in Phase 3's scope.
 
 ## Decisions already made — do not re-litigate
 

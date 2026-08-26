@@ -39,6 +39,8 @@ function render(initialPortId: string | null, prices = [makePrice('fiji', 'sugar
       prices={prices}
       now={Date.now()}
       initialPortId={initialPortId}
+      drafts={{}}
+      onDraftsChange={() => {}}
       onClose={() => {}}
       onSaved={() => {}}
     />,
@@ -112,6 +114,8 @@ describe('the entry screen renders', () => {
         prices={[]}
         now={Date.now()}
         initialPortId="fiji"
+        drafts={{}}
+        onDraftsChange={() => {}}
         onClose={() => {}}
         onSaved={() => {}}
       />,

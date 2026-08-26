@@ -17,9 +17,16 @@ import {
   type Prefs,
   type ShipPreset,
 } from './lib/prefs';
+import {
+  loadSession,
+  saveSession,
+  withoutPortDrafts,
+  type SessionDraft,
+} from './lib/session';
 import { Diagnostics } from './ui/Diagnostics';
 import { PortPicker } from './ui/PortPicker';
 import { PriceEntry } from './ui/PriceEntry';
+import type { DraftRow } from './data/submit';
 import { Results } from './ui/Results';
 import { ServerBadge, ServerPrompt } from './ui/ServerPicker';
 import { ShipPicker } from './ui/ShipPicker';
@@ -53,6 +60,26 @@ interface ShipChoice {
   upgradeIds: string[];
 }
 
+/**
+ * Stored drafts are keyed by good id, so they do not repeat it in the value.
+ * The entry screen's row type carries it, so it is put back on the way in and
+ * dropped on the way out.
+ */
+function toDraftRows(stored: Record<string, SessionDraft>): Record<string, DraftRow> {
+  return Object.fromEntries(
+    Object.entries(stored).map(([goodId, draft]) => [goodId, { goodId, ...draft }]),
+  );
+}
+
+function toStoredDrafts(rows: Record<string, DraftRow>): Record<string, SessionDraft> {
+  return Object.fromEntries(
+    Object.entries(rows).map(([goodId, row]) => [
+      goodId,
+      { buyText: row.buyText, sellText: row.sellText, stockText: row.stockText },
+    ]),
+  );
+}
+
 export default function App() {
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const [reference, setReference] = useState<ReferenceData | null>(null);
@@ -60,10 +87,25 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  const [step, setStep] = useState<Step>('origin');
-  const [originId, setOriginId] = useState<string | null>(null);
-  const [destinationId, setDestinationId] = useState<string | null>(null);
-  const [shipChoice, setShipChoice] = useState<ShipChoice | null>(null);
+  /**
+   * Everything below is restored from the last visit if there was one.
+   *
+   * iOS Safari reloads a backgrounded tab whenever it wants the memory, and
+   * this app's whole workflow is switching to the game and back. Holding the
+   * route, the ship and the typed prices only in React state meant every
+   * switch could silently dump the user at step 1 having lost the lot. See
+   * src/lib/session.ts.
+   */
+  const [restored] = useState(() => loadSession());
+
+  const [step, setStep] = useState<Step>(restored.step);
+  const [originId, setOriginId] = useState<string | null>(restored.originId);
+  const [destinationId, setDestinationId] = useState<string | null>(restored.destinationId);
+  const [shipChoice, setShipChoice] = useState<ShipChoice | null>(restored.shipChoice);
+  /** Prices typed but not yet saved, keyed by port then good. */
+  const [drafts, setDrafts] = useState<Record<string, Record<string, SessionDraft>>>(
+    restored.drafts,
+  );
 
   /**
    * Price entry is a mode, not a fifth step.
@@ -73,7 +115,9 @@ export default function App() {
    * from anywhere, including before a route exists. Making it a step would put
    * it in the progress bar and imply the flow is unfinished without it.
    */
-  const [entry, setEntry] = useState<{ portId: string | null } | null>(null);
+  const [entry, setEntry] = useState<{ portId: string | null } | null>(
+    restored.entryOpen ? { portId: restored.entryPortId } : null,
+  );
 
   const [showDiagnostics, setShowDiagnostics] = useState(
     () => typeof location !== 'undefined' && new URLSearchParams(location.search).has('diagnostics'),
@@ -92,6 +136,25 @@ export default function App() {
     const timer = setInterval(() => setNow(Date.now()), CLOCK_INTERVAL_MS);
     return () => clearInterval(timer);
   }, []);
+
+  /**
+   * Write the in-flight work to storage on every change.
+   *
+   * Cheap (a few hundred bytes) and it has to be eager: there is no warning
+   * before iOS discards the tab, so anything not already written is gone.
+   * `visibilitychange` would be too late and is unreliable on iOS.
+   */
+  useEffect(() => {
+    saveSession({
+      step,
+      originId,
+      destinationId,
+      shipChoice,
+      entryOpen: entry !== null,
+      entryPortId: entry?.portId ?? null,
+      drafts,
+    });
+  }, [step, originId, destinationId, shipChoice, entry, drafts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,8 +367,20 @@ export default function App() {
           prices={prices}
           now={now}
           initialPortId={entry.portId}
+          drafts={toDraftRows(entry.portId ? (drafts[entry.portId] ?? {}) : {})}
+          onDraftsChange={(next) => {
+            const portId = entry.portId;
+            if (!portId) return;
+            setDrafts((current) => ({ ...current, [portId]: toStoredDrafts(next) }));
+          }}
           onClose={() => setEntry(null)}
-          onSaved={refreshServerData}
+          onSaved={() => {
+            // Once they are in the database, keeping the drafts would re-offer
+            // saved numbers as though they were still unsaved.
+            const portId = entry.portId;
+            if (portId) setDrafts((current) => withoutPortDrafts(current, portId));
+            refreshServerData();
+          }}
         />
       ) : null}
 

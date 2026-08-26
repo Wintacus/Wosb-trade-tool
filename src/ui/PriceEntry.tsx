@@ -46,6 +46,8 @@ export function PriceEntry({
   now,
   thresholds,
   initialPortId,
+  drafts,
+  onDraftsChange,
   onClose,
   onSaved,
 }: {
@@ -58,12 +60,18 @@ export function PriceEntry({
   now: number;
   thresholds?: FreshnessThresholds;
   initialPortId: string | null;
+  /**
+   * Prices typed but not yet saved, held by App so they survive a reload.
+   * iOS discards backgrounded tabs, and this screen's whole purpose is being
+   * used while switching to the game and back -- see src/lib/session.ts.
+   */
+  drafts: Record<string, DraftRow>;
+  onDraftsChange: (next: Record<string, DraftRow>) => void;
   onClose: () => void;
   /** Called after a successful save so the rest of the app can refetch. */
   onSaved: (count: number) => void;
 }) {
   const [portId, setPortId] = useState<string | null>(initialPortId);
-  const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Record<Section, boolean>>({ trade: true, craft: false });
   const [saving, setSaving] = useState(false);
@@ -103,10 +111,8 @@ export function PriceEntry({
 
   function edit(goodId: string, field: 'buyText' | 'sellText' | 'stockText', value: string) {
     setSavedCount(null);
-    setDrafts((current) => {
-      const row = current[goodId] ?? { goodId, buyText: '', sellText: '', stockText: '' };
-      return { ...current, [goodId]: { ...row, [field]: value } };
-    });
+    const row = drafts[goodId] ?? { goodId, buyText: '', sellText: '', stockText: '' };
+    onDraftsChange({ ...drafts, [goodId]: { ...row, [field]: value } });
   }
 
   async function save() {
@@ -123,7 +129,7 @@ export function PriceEntry({
     setSaving(true);
     try {
       const count = await submitObservations({ serverId, portId, rows: result.rows });
-      setDrafts({});
+      onDraftsChange({});
       setSavedCount(count);
       onSaved(count);
     } catch (error) {
@@ -276,7 +282,7 @@ export function PriceEntry({
         saving={saving}
         onSave={save}
         onDiscard={() => {
-          setDrafts({});
+          onDraftsChange({});
           setProblems([]);
           setWarnings([]);
         }}

@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:sql": "node scripts/gen-sql.mjs && node scripts/gen-demo-sql.mjs && node scripts/gen-embedded-sql.mjs",
-    "tokens": "node scripts/token-audit.mjs"
+    "tokens": "node scripts/token-audit.mjs",
+    "verify": "node scripts/verify-ui.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
