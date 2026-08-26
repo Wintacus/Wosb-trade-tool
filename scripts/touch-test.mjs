@@ -943,7 +943,9 @@ try {
   //
   // Anyone who cannot pinch, or whose device leaks the gesture to the OS,
   // uses these three buttons. They must stay reachable, stay 44px, and
-  // still work at the extremes of zoom.
+  // still work at the extremes of zoom. Reset lives in the header now (it is
+  // rare, and it was holding prime bottom-right space over the map); +/-
+  // stay on the map because they are the gesture-free path.
   await freshMap();
   {
     const box = await mapArea();
@@ -984,6 +986,45 @@ try {
       bad.length
         ? bad.map(([name, b]) => `${name} ${b.size}${b.covered ? ' covered' : ''}${b.inside ? '' : ' offscreen'}`).join('; ')
         : `all three 44px and clear; + at max held scale ${stillMax.scale.toFixed(2)}, six − returned to ${zoomedOut.scale.toFixed(2)} with ${zoomedOut.onScreen}/${zoomedOut.positions.length} ports on screen`,
+    );
+  }
+
+  // --- THE ZOOM CONTROLS GET OUT OF THE WAY -----------------------------
+  //
+  // They are pinned to a fixed screen corner and do not move with the map, so
+  // whatever pans underneath them is hidden — measured at the fitted view they
+  // cover a 48x148px block of a 406x580px map and sit on top of Port Bord
+  // Radel. They fade while a finger is down, which is exactly when the user is
+  // dragging something into view. They must come BACK when the finger lifts,
+  // and must not swallow a tap while faded.
+  await freshMap();
+  {
+    const box = await mapArea();
+    const opacityNow = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('button[aria-label="Zoom in"]').parentElement;
+        return { opacity: Number(getComputedStyle(el).opacity), events: getComputedStyle(el).pointerEvents };
+      });
+
+    const atRest = await opacityNow();
+    // Press and hold mid-drag, sampling before releasing.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 60, { steps: 6 });
+    await page.waitForTimeout(320);
+    const during = await opacityNow();
+    await page.mouse.up();
+    await page.waitForTimeout(420);
+    const after = await opacityNow();
+
+    check(
+      'the zoom controls fade while dragging and come back after',
+      atRest.opacity > 0.9 &&
+        during.opacity < 0.5 &&
+        during.events === 'none' &&
+        after.opacity > 0.9 &&
+        after.events !== 'none',
+      `at rest ${atRest.opacity.toFixed(2)}, during drag ${during.opacity.toFixed(2)} (${during.events}), after ${after.opacity.toFixed(2)} (${after.events})`,
     );
   }
 

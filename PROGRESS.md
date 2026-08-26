@@ -259,10 +259,17 @@ price into a fresh-looking one. The recorded value sits beside the field.
   which had to be rewritten to use `panToLimit` rather than `panToward`,
   because panToward returns as soon as a port is merely on screen, the exact
   inadequate bar the check exists to replace. 31/31 touch checks.
-- **Found but NOT fixed:** the map's zoom +/−/reset buttons are pinned to a
-  fixed screen corner and do not move with pan/zoom, so they can sit over a
-  port that pans underneath them. Real, seen in a screenshot, needs a design
-  call. Less pressing now that any port can be brought to the middle.
+- **Zoom controls no longer hide ports (2026-08-26).** Measured first: the
+  stack covered a 48x148px block of a 406x580px map (3%) and sat on top of
+  Port Bord Radel at the fitted view. Chosen by the user from three options:
+  ⟲ reset moved to the header beside ✕ (rare action, was holding prime
+  bottom-right space over the map), and the remaining +/− fade to opacity 0.2
+  with `pointer-events-none` while a finger is down, returning on lift — so
+  they are transparent exactly when something is being dragged into view, and
+  a faded button cannot swallow a tap meant for the port behind it. +/− stay
+  ON the map deliberately: they are the gesture-free path for anyone who
+  cannot pinch. Pinned by `the zoom controls fade while dragging and come back
+  after`. 32/32 touch checks.
 - OCR (SPEC 7.2) still deferred until manual entry has been used on a real port.
 - Port state entry (tax %, faction, port level) is NOT in Phase 3's scope.
 

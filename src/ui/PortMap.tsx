@@ -239,6 +239,17 @@ export function PortMap({
   const [size, setSize] = useState(FALLBACK_SIZE);
 
   const pointers = useRef(new Map<number, Pointer>());
+  /**
+   * True while at least one finger is on the map.
+   *
+   * Drives the zoom controls fading out of the way. They are pinned to a fixed
+   * screen corner and do not move with the map, so whatever pans underneath
+   * them is hidden — measured at the fitted view, they cover a 48x148px block
+   * of a 406x580px map (3%) and sit on top of Port Bord Radel. Fading them
+   * while the map is actually moving is when it matters, because that is
+   * exactly when the user is looking for something underneath.
+   */
+  const [touching, setTouching] = useState(false);
   const pinchDistance = useRef<number | null>(null);
   const dragged = useRef(false);
   /** The wrapper the native, non-passive listeners are attached to. */
@@ -522,6 +533,7 @@ export function PortMap({
       // altogether and only a reload fixes it. The touch list is the
       // authority on what is actually down.
       pointers.current.clear();
+      setTouching(false);
       pinchDistance.current = null;
       pinchStart.current = null;
     };
@@ -613,6 +625,7 @@ export function PortMap({
       x: event.clientX,
       y: event.clientY,
     });
+    setTouching(true);
     dragged.current = false;
   }
 
@@ -684,6 +697,7 @@ export function PortMap({
   function onPointerUp(event: React.PointerEvent<SVGSVGElement>) {
     const wasDragged = dragged.current;
     pointers.current.delete(event.pointerId);
+    if (pointers.current.size === 0) setTouching(false);
     if (pointers.current.size < 2) {
       pinchDistance.current = null;
       // Drop the pinch anchor so the finger still down resumes a clean pan,
@@ -754,9 +768,19 @@ export function PortMap({
         <h2 className="min-w-0 truncate text-base font-semibold text-slate-100">
           {stepLabel} <span className="font-normal text-slate-500">· {ports.length} ports</span>
         </h2>
-        <Button onClick={onClose} ariaLabel="Close the map">
-          ✕
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/*
+            Reset lives up here rather than on the map. It is a rare action
+            and it was holding a 44px block of prime bottom-right space, on
+            top of the map, for something used once in a session.
+          */}
+          <Button onClick={reset} ariaLabel="Reset the view" className="w-12 px-0">
+            ⟲
+          </Button>
+          <Button onClick={onClose} ariaLabel="Close the map">
+            ✕
+          </Button>
+        </div>
       </header>
 
       {/*
@@ -911,9 +935,23 @@ export function PortMap({
           })}
         </svg>
 
-        {/* Zoom controls sit bottom-right, inside thumb reach, and are the
-            path that needs no gesture at all. */}
-        <div className="absolute right-3 bottom-3 flex flex-col gap-2">
+        {/*
+          Zoom controls sit bottom-right, inside thumb reach, and are the path
+          that needs no gesture at all — which is why they stay on the map and
+          are never removed: anyone who cannot pinch has only these.
+
+          They are pinned to the screen and do not move with the map, so
+          whatever pans underneath is hidden. They fade while a finger is down,
+          because that is exactly when the user is dragging something into view
+          and wants to see what is there. `pointer-events-none` goes with the
+          fade so a nearly invisible button cannot swallow a tap meant for the
+          port behind it; both come back the moment the finger lifts.
+        */}
+        <div
+          className={`absolute right-3 bottom-3 flex flex-col gap-2 transition-opacity duration-200 ${
+            touching ? "pointer-events-none opacity-20" : "opacity-100"
+          }`}
+        >
           <Button
             onClick={() => zoomTo(scale * 1.5)}
             ariaLabel="Zoom in"
@@ -927,9 +965,6 @@ export function PortMap({
             className="w-12 px-0"
           >
             −
-          </Button>
-          <Button onClick={reset} ariaLabel="Reset the view" className="w-12 px-0">
-            ⟲
           </Button>
         </div>
       </div>
