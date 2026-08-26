@@ -202,6 +202,37 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
+- **Entry sheet compacted 2026-08-26 — measured, not guessed.** Each good's row
+  was **202px** tall, exactly **2 fitted** a 430x740 phone, and the 20 trade
+  goods took **6.8 screens** of scrolling (all 61: 15.5). SPEC 7.1 asks this
+  screen to be fast on a phone and it was not. The height was pure repetition:
+  a "Never recorded here" badge sitting above an "On record: nothing yet" line
+  saying the same thing, "Sell you get"/"Stock if shown" labels spelled out on
+  all 61 rows, and one identical "shows a buy price? Add one" offer per row.
+  Now: badge carries freshness alone, "on record" shows only when something is,
+  labels are placeholders with `sr-only` text behind them, and the buy-price
+  offer is one section-level toggle instead of twenty. Result **92px rows, 4 on
+  screen, 3.8 screens** (all 61: 9.3), inputs still 44px. Pinned by `the entry
+  sheet stays quick to scroll` in verify-ui.mjs.
+- **DECIDED 2026-08-26: the "where do I sell my hold" redesign is BENCHED.**
+  User's call and a sound one — it needs real data to be worth anything or to
+  test, and it would add a second manual chore (entering your hold). Revisit
+  once there is data. **Do not start it without asking.**
+- **OCR is greenlit but NOT next.** User chose to polish and use manual entry
+  first, and confirmed they will set `ANTHROPIC_API_KEY` in Vercel with a spend
+  cap when we get there. Scope when it starts: **Market screen only** (the 20
+  trade goods), review screen mandatory, per SPEC 7.2's safeguards. The
+  `ocr_corrections` table already exists from Phase 1; no OCR code exists yet.
+- **Screen share (SPEC 7.3) is useless to this user — it is desktop only.** The
+  browser cannot capture another app on iOS. When they ask for "just turn on
+  screen sharing and autofill", the phone-viable answer is OCR from a
+  screenshot, not 7.3. Say so rather than building something they cannot run.
+- **Housekeeping:** `scripts/ui-test.mjs` (24KB), `app-harness.html` and
+  `src/app-harness.tsx` (8.5KB) were written by a subagent that was cut off,
+  and have never been run or reviewed. `scripts/verify-ui.mjs` now covers this
+  ground properly. Either harvest anything useful out of them or delete them —
+  never-run test code that claims to test is worse than none.
+
 - **THE bug, found 2026-08-26 after three wrong diagnoses: the app lost every
   bit of in-flight work on a page reload.** Route, ship and every typed price
   lived only in React state. iOS Safari discards a backgrounded tab whenever it

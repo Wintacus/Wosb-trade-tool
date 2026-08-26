@@ -83,7 +83,7 @@ describe('the entry screen renders', () => {
 
   it('says plainly when a good has never been recorded here', () => {
     const html = render('fiji');
-    expect(html).toContain('Never recorded here');
+    expect(html).toContain('not recorded here');
   });
 
   it('marks placeholder data as placeholder', () => {
@@ -97,9 +97,13 @@ describe('the entry screen renders', () => {
     // invites the same number in both, which manufactures profit from nothing.
     const html = render('fiji');
     const sugarRow = html.slice(html.indexOf('>Sugar<'), html.indexOf('>Silk<'));
-    expect(sugarRow).not.toContain('you pay');
-    expect(sugarRow).toContain('you get');
-    expect(sugarRow).toContain('shows a buy price for Sugar');
+    expect(sugarRow).not.toContain('placeholder="Buy"');
+    expect(sugarRow).toContain('placeholder="Sell"');
+    // The offer to add one lives once on the section, not once per row: at
+    // ~40px a copy, twenty of them were a real part of why this screen took
+    // 6.8 screens of scrolling.
+    expect(html).toContain('Add a buy column');
+    expect(html.match(/Add a buy column/g)).toHaveLength(1);
   });
 
   it('still offers buy and sell for a craft resource', () => {
@@ -120,9 +124,9 @@ describe('the entry screen renders', () => {
         onSaved={() => {}}
       />,
     );
-    expect(html).toContain('you pay');
-    expect(html).toContain('you get');
-    expect(html).not.toContain('shows a buy price for Copper');
+    expect(html).toContain('placeholder="Buy"');
+    expect(html).toContain('placeholder="Sell"');
+    expect(html).not.toContain('Add a buy column');
   });
 
   it('cannot be saved until something is entered', () => {

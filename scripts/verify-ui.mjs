@@ -213,6 +213,54 @@ try {
     fail('typed prices survive a reload', 'no price input found to type into');
   }
 
+  // --- the entry sheet stays quick on a phone ---------------------------
+  // SPEC 7.1 asks this screen to be fast on a phone. Measured 2026-08-26 it
+  // was not: each row was 202px tall, exactly two fitted on a 430x740 screen,
+  // and the 20 trade goods took 6.8 screens of scrolling. The height went on
+  // repetition -- a "never recorded" badge above an "on record: nothing yet"
+  // line, field labels on all 61 rows, and one identical buy-price offer per
+  // row. This pins the compact result so it cannot quietly regrow.
+  {
+    const rows = await page.evaluate(() => {
+      const list = [...document.querySelectorAll('li')].filter((li) =>
+        li.querySelector('input[inputmode]'),
+      );
+      const vh = window.innerHeight;
+      const first = list[0]?.getBoundingClientRect();
+      const inputs = [...document.querySelectorAll('input[inputmode]')]
+        .slice(0, 6)
+        .map((i) => Math.round(i.getBoundingClientRect().height));
+      return {
+        rowHeight: first ? Math.round(first.height) : null,
+        visible: list.filter((r) => {
+          const b = r.getBoundingClientRect();
+          return b.top < vh && b.bottom > 0;
+        }).length,
+        screens: Number((document.documentElement.scrollHeight / vh).toFixed(1)),
+        smallestInput: inputs.length ? Math.min(...inputs) : 0,
+      };
+    });
+    // Room to breathe, but nowhere near the 202px it started at. The 44px
+    // floor is the tap target and must never be traded away for compactness.
+    const ok =
+      rows.rowHeight !== null &&
+      rows.rowHeight <= 120 &&
+      rows.visible >= 3 &&
+      rows.screens <= 5 &&
+      rows.smallestInput >= 44;
+    if (ok) {
+      pass(
+        'the entry sheet stays quick to scroll',
+        `${rows.rowHeight}px rows, ${rows.visible} on screen, ${rows.screens} screens, inputs ${rows.smallestInput}px`,
+      );
+    } else {
+      fail(
+        'the entry sheet stays quick to scroll',
+        `${rows.rowHeight}px rows, ${rows.visible} on screen, ${rows.screens} screens, smallest input ${rows.smallestInput}px`,
+      );
+    }
+  }
+
   if (pageErrors.length === 0) {
     pass('no uncaught errors in the console');
   } else {

@@ -233,6 +233,7 @@ export function PriceEntry({
           goods={tradeGoods}
           expanded={open.trade || query.trim() !== '' || craftGoods.length === 0}
           onToggle={() => setOpen((s) => ({ ...s, trade: !s.trade }))}
+          offerBuy={false}
           drafts={drafts}
           recorded={recorded}
           now={now}
@@ -249,6 +250,7 @@ export function PriceEntry({
           // collapsed section is just a screen with nothing on it.
           expanded={open.craft || query.trim() !== '' || tradeGoods.length === 0}
           onToggle={() => setOpen((s) => ({ ...s, craft: !s.craft }))}
+          offerBuy
           drafts={drafts}
           recorded={recorded}
           now={now}
@@ -301,6 +303,7 @@ function GoodSection({
   recorded,
   now,
   thresholds,
+  offerBuy,
   onEdit,
   problemFor,
 }: {
@@ -309,6 +312,15 @@ function GoodSection({
   goods: readonly Good[];
   expanded: boolean;
   onToggle: () => void;
+  /**
+   * Whether this section may show a Buy column at all. False for trade goods:
+   * the Market tab shows one price and it is what the port pays you, so an
+   * empty Buy box beside it invites the same number in both, which invents
+   * profit from nothing (CLAUDE.md hard rule 1). It stays switchable, because
+   * "never seen" is not "cannot exist" — just once here rather than once per
+   * row, where twenty identical offers cost ~40px each.
+   */
+  offerBuy: boolean;
   drafts: Record<string, DraftRow>;
   recorded: ReadonlyMap<string, CurrentPrice>;
   now: number;
@@ -316,6 +328,7 @@ function GoodSection({
   onEdit: (goodId: string, field: 'buyText' | 'sellText' | 'stockText', value: string) => void;
   problemFor: (goodId: string, field: FieldProblem['field']) => string | null;
 }) {
+  const [showBuy, setShowBuy] = useState(offerBuy);
   if (goods.length === 0) return null;
 
   return (
@@ -338,20 +351,35 @@ function GoodSection({
       </button>
 
       {expanded ? (
-        <ul className="mt-2 flex flex-col gap-2">
-          {goods.map((good) => (
-            <GoodRow
-              key={good.id}
-              good={good}
-              draft={drafts[good.id]}
-              current={recorded.get(good.id) ?? null}
-              now={now}
-              thresholds={thresholds}
-              onEdit={onEdit}
-              problemFor={problemFor}
-            />
-          ))}
-        </ul>
+        <>
+          {!offerBuy ? (
+            <button
+              type="button"
+              onClick={() => setShowBuy((current) => !current)}
+              aria-pressed={showBuy}
+              className="mt-2 min-h-11 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300"
+            >
+              {showBuy
+                ? 'Hide the buy column'
+                : 'The game shows a buy price for these? Add a buy column.'}
+            </button>
+          ) : null}
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {goods.map((good) => (
+              <GoodRow
+                key={good.id}
+                good={good}
+                draft={drafts[good.id]}
+                current={recorded.get(good.id) ?? null}
+                now={now}
+                thresholds={thresholds}
+                showBuy={showBuy}
+                onEdit={onEdit}
+                problemFor={problemFor}
+              />
+            ))}
+          </ul>
+        </>
       ) : null}
     </section>
   );
@@ -363,6 +391,7 @@ function GoodRow({
   current,
   now,
   thresholds,
+  showBuy,
   onEdit,
   problemFor,
 }: {
@@ -371,50 +400,62 @@ function GoodRow({
   current: CurrentPrice | null;
   now: number;
   thresholds?: FreshnessThresholds;
+  /** Whether the Buy column is showing, decided once for the whole section. */
+  showBuy: boolean;
   onEdit: (goodId: string, field: 'buyText' | 'sellText' | 'stockText', value: string) => void;
   problemFor: (goodId: string, field: FieldProblem['field']) => string | null;
 }) {
   const touched = Boolean(draft && (draft.buyText || draft.sellText || draft.stockText));
+  // A draft buy price keeps its own field visible even if the section's Buy
+  // column is switched off again, so a typed number can never be hidden from
+  // the person who typed it.
+  const buy = showBuy || Boolean(draft?.buyText);
 
   /**
-   * A trade good has no buy price on the Market tab -- confirmed in game on
-   * 2026-08-26: it shows one number per good, and that number is what the port
-   * pays you. So the field is not offered by default. Leaving an empty "Buy"
-   * box next to a sell price is an invitation to type the same number into
-   * both, which manufactures profit out of nothing (CLAUDE.md hard rule 1).
+   * Deliberately compact. Measured on a 430x740 phone, this row was 202px tall
+   * and exactly TWO fitted on screen: entering the 20 trade goods meant 6.8
+   * screens of scrolling, and all 61 meant 15.5. SPEC 7.1 asks this screen to
+   * be fast on a phone, and that was not.
    *
-   * It is still reachable, because "never seen" is not "cannot exist": if a
-   * buy price for a trade good turns up somewhere else in the game, it can be
-   * recorded without waiting for a deploy.
+   * The height went on saying the same thing repeatedly: a "Never recorded
+   * here" badge above an "On record: nothing yet" line, field labels repeated
+   * on all 61 rows, and one identical offer to add a buy price per row. The
+   * badge now carries the freshness alone, "on record" appears only when
+   * something IS on record, the labels are placeholders with screen-reader
+   * text behind them, and the buy-price offer moved to the section header
+   * where one copy does the job of twenty.
    */
-  const [buyShown, setBuyShown] = useState(!good.isTradeGood);
-  const showBuy = buyShown || Boolean(draft?.buyText);
-
   return (
     <li
-      className={`rounded-xl border p-3 ${
+      className={`rounded-lg border px-3 py-2 ${
         touched ? 'border-amber-400/50 bg-amber-400/5' : 'border-slate-800 bg-slate-950/40'
       }`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-slate-100">{good.name}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-medium text-slate-100">{good.name}</span>
         {current ? (
-          <FreshnessBadge observedAt={current.observedAt} now={now} thresholds={thresholds} />
+          <span className="flex shrink-0 items-center gap-2">
+            <span className="text-xs text-slate-500">{reference(current)}</span>
+            <FreshnessBadge
+              observedAt={current.observedAt}
+              now={now}
+              thresholds={thresholds}
+              showAge={false}
+            />
+          </span>
         ) : (
-          <span className="text-xs text-slate-500">Never recorded here</span>
+          <span className="shrink-0 text-xs text-slate-600">not recorded here</span>
         )}
       </div>
 
-      <p className="mt-1 text-xs text-slate-500">
-        On record: {reference(current)}
-        {current?.isDemo ? ' · placeholder data, not a real sighting' : ''}
-      </p>
+      {current?.isDemo ? (
+        <p className="text-xs text-amber-200/70">placeholder data, not a real sighting</p>
+      ) : null}
 
-      <div className={`mt-2 grid gap-2 ${showBuy ? 'grid-cols-3' : 'grid-cols-2'}`}>
-        {showBuy ? (
+      <div className={`mt-1.5 grid gap-2 ${buy ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {buy ? (
           <Field
             label="Buy"
-            hint="you pay"
             value={draft?.buyText ?? ''}
             onChange={(value) => onEdit(good.id, 'buyText', value)}
             error={problemFor(good.id, 'buy')}
@@ -423,7 +464,6 @@ function GoodRow({
         ) : null}
         <Field
           label="Sell"
-          hint="you get"
           value={draft?.sellText ?? ''}
           onChange={(value) => onEdit(good.id, 'sellText', value)}
           error={problemFor(good.id, 'sell')}
@@ -431,22 +471,11 @@ function GoodRow({
         />
         <Field
           label="Stock"
-          hint="if shown"
           value={draft?.stockText ?? ''}
           onChange={(value) => onEdit(good.id, 'stockText', value)}
           error={problemFor(good.id, 'stock')}
         />
       </div>
-
-      {showBuy ? null : (
-        <button
-          type="button"
-          onClick={() => setBuyShown(true)}
-          className="mt-2 min-h-11 text-xs text-slate-500 underline underline-offset-2 hover:text-slate-300"
-        >
-          The game shows a buy price for {good.name}? Add one.
-        </button>
-      )}
     </li>
   );
 }
@@ -470,14 +499,12 @@ function reference(current: CurrentPrice | null): string {
 
 function Field({
   label,
-  hint,
   value,
   onChange,
   error,
   decimal = false,
 }: {
   label: string;
-  hint: string;
   value: string;
   onChange: (value: string) => void;
   error: string | null;
@@ -485,9 +512,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-slate-400">
-        {label} <span className="font-normal text-slate-600">{hint}</span>
-      </span>
+      {/*
+        The label is the placeholder rather than a line of text above the box.
+        Spelled out on every row it cost ~30px each, 61 times over, on a screen
+        whose whole job is to be quick on a phone. Screen readers still get it.
+      */}
+      <span className="sr-only">{label}</span>
       <input
         // A numeric keypad on a phone, without type="number"'s scroll-wheel and
         // spinner behaviour, and without it silently discarding a bad value:
@@ -496,9 +526,10 @@ function Field({
         inputMode={decimal ? 'decimal' : 'numeric'}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="—"
+        placeholder={label}
+        aria-label={label}
         aria-invalid={error ? true : undefined}
-        className={`mt-1 min-h-11 w-full rounded-lg border bg-slate-950/60 px-3 text-base
+        className={`min-h-11 w-full rounded-lg border bg-slate-950/60 px-3 text-base
           tabular-nums text-slate-100 placeholder:text-slate-600 focus:outline-none ${
             error ? 'border-red-500/70 focus:border-red-400' : 'border-slate-700 focus:border-amber-400'
           }`}
