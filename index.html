@@ -2,10 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      Page zoom is deliberately left ENABLED here.
+
+      The obvious "fix" for a map that leaks pinch gestures into the browser is
+      to add `maximum-scale=1, user-scalable=no` to this tag. We are not doing
+      that, for two reasons:
+
+        1. It does not work. iOS Safari has ignored `user-scalable=no` since
+           iOS 10 precisely because sites were using it to break accessibility.
+           It would give a false sense of a fix while Safari kept zooming.
+        2. It would be an accessibility regression everywhere else. Anyone who
+           needs to magnify the results table or a price to read it would lose
+           the ability to, for the whole app, forever.
+
+      Gesture containment is therefore done where it can be scoped: on the map
+      element itself, for the duration of an actual map touch. See PortMap.tsx.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="dark light" />
     <title>WOSB Trade Tool</title>
-    <meta name="description" content="Unofficial fan-made trading calculator for World of Sea Battle." />
+    <meta
+      name="description"
+      content="Unofficial fan-made trading calculator for World of Sea Battle."
+    />
   </head>
   <body>
     <div id="root"></div>

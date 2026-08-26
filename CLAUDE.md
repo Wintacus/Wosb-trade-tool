@@ -98,6 +98,40 @@ The first session of this project spent 146.8 million tokens. **95.6% of that wa
 - **End every session with `npm run tokens`, and write the numbers into `PROGRESS.md`.** It reads this session's own transcript and compares requests, context growth and batching rate against the first session's baseline. It is one command and a few seconds. **A batching rate still in single digits means the rule above is not working and needs a different fix — fewer, larger shell commands — not another restatement.** Session 1 had a standing instruction to batch and still managed 2.0%, so treat the measurement as the truth and the rule as an intention.
 - **Audits are cheapest at the start of a session, aimed at the repository.** "Review everything from the beginning" late in a session re-reads the whole conversation to do it; two such requests were 30.9% of all replayed tokens. The same question in a fresh session reads the code instead — and the code is the truth, not the chat log.
 
+## Never let the harness wake this session
+
+Measured on 2026-08-26: **26% of an entire session — 51M tokens across 138 requests —
+was spent on notification wake-ups that produced nothing.** Every one was a Vercel bot
+editing its own comment ("Building" → "Ready") or a CI suite reporting the green it had
+already reported. CI was never once red. Each wake replays the whole conversation.
+
+- **Do NOT call `subscribe_pr_activity`.** Ever, on this project. The user reads the
+  preview URL themselves and tells you what is wrong; that is the feedback loop that has
+  actually found every bug. A PR subscription found none.
+- **Do NOT schedule check-ins** (`send_later`, `create_trigger`, `/loop`) to poll a PR,
+  a deploy, or CI. If a status genuinely matters, check it once, on demand, when the
+  user asks.
+- To check CI, use `pull_request_read` with `get_check_runs`. Never `get` — that returns
+  the entire PR body, several thousand tokens, and it stays in context for the rest of
+  the session.
+
+## Cost is requests x context, and context only grows
+
+Same session, by quarter: median context per request went **132k → 253k → 395k → 507k**.
+223 of 613 requests ran above 400k and burned 107M tokens between them. Had every
+request run at the first quarter's context, the identical work would have cost **81M
+instead of 197M**.
+
+- **Start a fresh session at every real boundary** — a finished phase, a shipped fix, a
+  new problem. This is the single biggest lever and it is free. The session that
+  measured the numbers above did Phase 2, three rounds of map rebuilding and a test
+  harness in one sitting; it should have been four sessions.
+- **Batch independent tool calls into one message.** Measured batching rate: 0.0%,
+  twice. 213 separate Bash calls in one session, each paying a full replay.
+- **Two strikes on a failing command.** If the same command fails twice, stop running
+  variations of it and spend one call instrumenting instead. Fifteen near-identical
+  failed runs went into a problem whose cause was a single word in the command.
+
 ## Session continuity
 
 Sessions end unpredictably — usage limits, context running out, the user closing the app. Assume any session may be your last, and leave the repo in a state the next session can resume from.
