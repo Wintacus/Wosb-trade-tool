@@ -261,7 +261,18 @@ export default function App() {
       serverId={serverId}
       onServerChange={(id) => updatePrefs((current) => ({ ...current, serverId: id }))}
       onShowDiagnostics={() => setShowDiagnostics(true)}
-      onAddPrices={serverId && serverData && !entry ? () => setEntry({ portId: null }) : undefined}
+      // Defaults to the port already in view rather than asking again: opening
+      // this with portId: null shows the exact same searchable port list as
+      // step 1 of the main flow, and from a real phone that read as the whole
+      // app having reset — a route and ship that were never actually touched,
+      // reappearing to look like a fresh start. Preferring the current
+      // destination when there's no origin (e.g. still on step "To") means
+      // this never asks a redundant question when a port is already on screen.
+      onAddPrices={
+        serverId && serverData && !entry
+          ? () => setEntry({ portId: origin?.id ?? destination?.id ?? null })
+          : undefined
+      }
     >
       {loadError ? (
         <ErrorNote

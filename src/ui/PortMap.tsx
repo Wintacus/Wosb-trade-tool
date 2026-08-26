@@ -693,15 +693,16 @@ export function PortMap({
       className="fixed inset-0 z-50 flex flex-col bg-slate-950"
       style={{ height: "100dvh" }}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-slate-100">
-            {stepLabel}
-          </h2>
-          <p className="text-xs text-slate-500">
-            Tap a port, then confirm. {ports.length} ports.
-          </p>
-        </div>
+      {/*
+        One line, not two: "tap a port, then confirm" only restates what the
+        footer's own confirm button already makes obvious. Every removed line
+        here is height the map canvas gets back — this header plus the footer
+        below it were together eating a quarter of a 430x740 phone screen.
+      */}
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <h2 className="min-w-0 truncate text-base font-semibold text-slate-100">
+          {stepLabel} <span className="font-normal text-slate-500">· {ports.length} ports</span>
+        </h2>
         <Button onClick={onClose} ariaLabel="Close the map">
           ✕
         </Button>
@@ -918,9 +919,13 @@ export function PortMap({
             </Button>
           </div>
         ) : (
-          <p className="py-2 text-sm text-slate-400">
-            Tap a port to see it here. A numbered circle means several ports are
-            too close to tap apart — tap it to zoom in.
+          // One line, not two: the header subtitle already says "tap a port,
+          // then confirm", so this only needs to add the one thing it doesn't
+          // — what a numbered circle means. A phone measured at 430x740 lost
+          // 26% of the dialog's height to header+footer chrome before this;
+          // every line here is height the map itself does not get.
+          <p className="py-1.5 text-sm text-slate-400">
+            A numbered circle means ports too close to tap apart — tap it to zoom in.
           </p>
         )}
         <MapLegend />
@@ -929,18 +934,27 @@ export function PortMap({
   );
 }
 
+/**
+ * A single row that scrolls sideways rather than wrapping.
+ *
+ * It used to wrap to two lines at phone width, which combined with the
+ * placeholder text above it to eat a quarter of the map dialog's height
+ * (measured: 194 of 740px on a 430-wide viewport) before the map itself got
+ * any of it. Icon-only entries plus a horizontal scroll keep it to one line
+ * without dropping any of the five bands.
+ */
 function MapLegend() {
   const entries = [
-    { level: "fresh", icon: "✓", label: "Under 1 hour" },
-    { level: "aging", icon: "◷", label: "1–6 hours" },
-    { level: "stale", icon: "⚠", label: "6–24 hours" },
-    { level: "wrong", icon: "!", label: "Over a day" },
-    { level: "none", icon: "○", label: "Never recorded" },
+    { level: "fresh", icon: "✓", label: "Fresh" },
+    { level: "aging", icon: "◷", label: "Aging" },
+    { level: "stale", icon: "⚠", label: "Stale" },
+    { level: "wrong", icon: "!", label: "Old" },
+    { level: "none", icon: "○", label: "None" },
   ] as const;
   return (
-    <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+    <ul className="mt-1.5 flex gap-x-2.5 overflow-x-auto text-xs whitespace-nowrap text-slate-500">
       {entries.map((entry) => (
-        <li key={entry.level} className="flex items-center gap-1">
+        <li key={entry.level} className="flex shrink-0 items-center gap-1">
           <span
             aria-hidden="true"
             className={`size-2 rounded-full ${FRESHNESS_CLASS[entry.level].dot}`}

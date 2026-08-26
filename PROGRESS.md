@@ -202,6 +202,47 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
+- **User reported two things broken live, 2026-08-26, after the 504 fix and the
+  map edge-clamp fix both shipped.** Neither turned out to be what a fresh
+  guess would have said. Both diagnosed by actually driving the real,
+  unmodified `App.tsx`/`PortMap.tsx` in headless Chromium with a mocked
+  `/rest/v1/**` (real `data/*.json` as fixtures) rather than guessing from the
+  code — no live Supabase credentials exist in this sandbox, so this is the
+  only way to see the actual app run here. Should have reached for this
+  before either of the two subagent fixes, not after a second complaint.
+  1. **"Add Prices" felt like it reset the whole app.** It didn't — no state
+     was lost, confirmed by rendering the exact click sequence. The header's
+     "+ Add prices" button opened `PriceEntry` with `portId: null`, which
+     shows "Which port are you at?" using the *exact same* `<PortPicker>`
+     component as step 1 of the main flow — pixel-identical search box and
+     port list. On a phone, with a route and ship already chosen, that reads
+     as "it forgot everything," even though closing it (Cancel/Done) returns
+     to the untouched route. Fixed in `src/App.tsx`: the header button now
+     defaults to `origin?.id ?? destination?.id ?? null`, so it only asks
+     "which port" when there is truly no port in context yet — otherwise it
+     goes straight to that port's price list, matching the Results screen's
+     own "Add prices for these ports" button.
+  2. **"Give me more room, it's still cut off" on the map.** Real, measured,
+     not a misperception: on a 430×740 phone viewport the map dialog's
+     header+footer chrome ate 194px — **26.2% of the screen** — before the
+     map canvas got any of it, mostly an always-visible two-line legend plus
+     redundant instructional text ("Tap a port to see it here" duplicating
+     the header subtitle). Trimmed in `src/ui/PortMap.tsx`: one-line header
+     (title + count, no separate subtitle), one-line empty-state footer text,
+     legend compressed to a single non-wrapping row. Now 160px / **21.6%**.
+     Verified both by direct measurement (`getBoundingClientRect` on the
+     header/surface/footer) and by re-running `scripts/touch-test.mjs`
+     (still 29/29 — no tap target or reachability regression).
+     **Found but NOT fixed:** the zoom +/−/reset button stack is
+     `position: absolute` at a fixed screen corner (bottom-right) and does
+     not move with pan/zoom, so it visibly covers whatever port happens to
+     pan underneath it — seen directly in a screenshot obscuring a port's
+     label. This is a separate, real contributor to "not enough room" and is
+     the next thing to fix here; it wasn't touched this round because it
+     needs a design call (shrink the buttons? let markers avoid that corner?
+     something else?) rather than an obvious one-line fix.
+  **Neither fix has been seen on a real phone yet — both are provable in
+  Chromium and by measurement, but the live check is still outstanding.**
 - **First live save hit a bare 504** ("Could not create a contributor account
   (504)") — an unparseable body, meaning Vercel's own platform gateway killed
   the function, not `anon-session.ts` returning one itself (it never sends
