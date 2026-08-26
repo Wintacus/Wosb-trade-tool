@@ -127,6 +127,7 @@ the one check this session could not run.
 |---|---|---|---|---|
 | 1 — Phase 0 + 1 | 390 | 146.8M | 2.0% | 349,208 |
 | 2 — Phase 2 | 358 | 111.1M | 0.0% | 325,065 |
+| 3 — Phase 3 entry | 62 | 7.7M | 4.6% | 129,884 |
 
 Session 2 should have been four sessions. Median context per request by quarter ran
 **132k → 253k → 395k → 507k**; 223 of 613 requests ran above 400k and burned 107M
@@ -139,6 +140,12 @@ instead of 197M**. Two causes, both now rules in CLAUDE.md:
    once red, not one action produced. Both are now switched off and must stay off.
 2. **The session never ended.** End at every real boundary; it is free and it is the
    biggest lever there is.
+
+Session 3 cost 7.7M against session 2's 111.1M for comparable ground. What
+changed was not discipline about batching — that is still 4.6% — but **ending
+the session at the boundary and reading only what was needed**: SPEC section 7
+alone rather than the whole file, PROGRESS from the branch that was current,
+and no PR subscription. Peak context 181k against session 2's 507k.
 
 Run `npm run tokens` before this session ends and add its row above.
 
