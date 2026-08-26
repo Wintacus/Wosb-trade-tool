@@ -87,18 +87,45 @@ const DOUBLE_TAP_SLOP = 32;
  * of the viewport. A little slack stops the pan feeling like it hit a wall.
  */
 /**
- * How much of the ports' bounding box must stay on screen, in pixels. Enough
- * that a marker and its label remain visible, so the view always shows where
- * you are rather than blank sea.
- */
-const KEEP_VISIBLE = 56;
-/**
  * How close to an edge a port must be before its label anchors inward rather
  * than centring. Roughly half the width of a long port name.
  */
 const LABEL_EDGE_PAD = 60;
 /** Fallback size before the first measurement lands. */
 const FALLBACK_SIZE = { width: 360, height: 480 };
+
+/**
+ * Clamp one axis so the map never shows a gap at the edge.
+ *
+ *  - When the content is LARGER than the viewport, the viewport must stay
+ *    inside it: pan until an edge meets an edge and no further. Letting it go
+ *    further is what put the user on a screen of blank sea at 4x with nothing
+ *    to navigate by.
+ *  - When the content is SMALLER, there is nothing to pan through, so it is
+ *    locked centred. Without this the map could be dragged sideways at 1x and
+ *    simply stay there, stranding 31 of the 42 ports off screen with no
+ *    spring-back — this map has no inertia or animation to bring them home.
+ */
+function clampAxis(
+  offset: number,
+  contentMin: number,
+  contentMax: number,
+  viewport: number,
+): number {
+  const span = contentMax - contentMin;
+  if (span <= viewport) {
+    // Smaller than the screen: it may slide within the slack, but never far
+    // enough for any of it to leave. Locking it dead centre instead was worse
+    // than it sounds — a locked axis silently overrides the pinch anchor, and
+    // the port under the fingers drifted 53px because it could not follow
+    // them vertically.
+    return Math.max(-contentMin, Math.min(viewport - contentMax, offset));
+  }
+  // Larger than the screen: the screen must stay inside it, so panning stops
+  // when an edge meets an edge. Going further shows blank sea with nothing to
+  // navigate by.
+  return Math.max(viewport - contentMax, Math.min(-contentMin, offset));
+}
 
 interface Pointer {
   id: number;
@@ -251,35 +278,21 @@ export function PortMap({
   /**
    * Keep the map reachable without letting it be dragged into empty space.
    *
-   * The rule is that the ports' bounding box must always overlap the viewport
-   * by at least KEEP_VISIBLE pixels. That single condition does three jobs:
+   * Clamping is per axis, against the ports' own bounding box rather than the
+   * canvas: fitting a wide map into a tall phone letterboxes it, and the empty
+   * bands are not somewhere anyone should be able to get lost in. See
+   * clampAxis for the two cases.
    *
-   *  - every port stays reachable, because the box may be dragged until its
-   *    far edge touches the near edge of the screen;
-   *  - no drag can end on a blank screen, which used to be possible by panning
-   *    south at 4x into the letterboxed band below the southernmost port;
-   *  - there is no resting overscroll, so releasing a drag never leaves ports
-   *    stranded outside the viewBox waiting for a spring-back that this map
-   *    never implemented.
-   *
-   * An earlier version clamped as though the map grew outward from the centre
-   * when it actually grows right and down from the origin, which allowed only
-   * half the travel needed and made the map look cut off as soon as you
-   * zoomed. The reachability checks in scripts/touch-test.mjs exist for that.
+   * The first version clamped as though the map grew outward from the centre
+   * when it grows right and down from the origin, which allowed only half the
+   * travel needed and made the map look cut off as soon as you zoomed. The
+   * reachability checks in scripts/touch-test.mjs exist because of that.
    */
   function clampOffset(next: { x: number; y: number }, atScale: number) {
     const { minX, minY, maxX, maxY } = contentBounds;
-    const keepX = Math.min(KEEP_VISIBLE, (maxX - minX) * atScale);
-    const keepY = Math.min(KEEP_VISIBLE, (maxY - minY) * atScale);
-    const lowX = keepX - maxX * atScale;
-    const highX = size.width - keepX - minX * atScale;
-    const lowY = keepY - maxY * atScale;
-    const highY = size.height - keepY - minY * atScale;
     return {
-      // Math.min guards the degenerate case where the content is wider than
-      // the range allows; without it the bounds could cross and flip.
-      x: Math.max(Math.min(lowX, highX), Math.min(next.x, Math.max(lowX, highX))),
-      y: Math.max(Math.min(lowY, highY), Math.min(next.y, Math.max(lowY, highY))),
+      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width),
+      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height),
     };
   }
 
@@ -420,7 +433,19 @@ export function PortMap({
     // flag would leave page zoom suppressed for the rest of the session.
     const onTouchRelease = (event: Event) => {
       const touches = (event as TouchEvent).touches;
-      if (!touches || touches.length === 0) touchingMap.current = false;
+      if (touches && touches.length > 0) return;
+      touchingMap.current = false;
+      // Forget every tracked pointer once the screen is genuinely clear.
+      //
+      // pointerup does not always arrive for every finger — a gesture ended by
+      // an incoming call, a notification, or the app switcher can simply stop
+      // reporting. A pointer left in the map means the next single-finger drag
+      // still looks like a two-finger pinch, so the map stops panning
+      // altogether and only a reload fixes it. The touch list is the
+      // authority on what is actually down.
+      pointers.current.clear();
+      pinchDistance.current = null;
+      pinchStart.current = null;
     };
 
     const onWheel = (event: WheelEvent) => {
