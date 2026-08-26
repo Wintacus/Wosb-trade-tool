@@ -121,9 +121,35 @@ presets) were written by a subagent that was cut off. Never executed, never revi
 build, but nobody has yet loaded the deployed site and clicked through it. That is
 the one check this session could not run.
 
+## Session cost — read before starting
+
+| Session | Requests | Total tokens | Batching | Median context |
+|---|---|---|---|---|
+| 1 — Phase 0 + 1 | 390 | 146.8M | 2.0% | 349,208 |
+| 2 — Phase 2 | 358 | 111.1M | 0.0% | 325,065 |
+
+Session 2 should have been four sessions. Median context per request by quarter ran
+**132k → 253k → 395k → 507k**; 223 of 613 requests ran above 400k and burned 107M
+between them. The same work at the first quarter's context would have cost **81M
+instead of 197M**. Two causes, both now rules in CLAUDE.md:
+
+1. **Notification wake-ups: 26% of the session — 51M tokens over 138 requests — for
+   nothing.** A PR subscription plus scheduled check-ins meant every Vercel
+   "Building"/"Ready" comment edit replayed the whole conversation. 32 wakes, CI never
+   once red, not one action produced. Both are now switched off and must stay off.
+2. **The session never ended.** End at every real boundary; it is free and it is the
+   biggest lever there is.
+
+Run `npm run tokens` before this session ends and add its row above.
+
 ## Next — Phase 3 (Data Entry)
 
-Start in a **fresh session**. SPEC.md section 7. Build manual entry first — it is the
+**State of play before you start:** Phase 2 is complete and green on branch
+`claude/phase-2-6gqs8q`, with **PR #6 open and NOT merged**. `main` is still the Phase 0/1
+status page. Decide with the user whether to merge #6 first — Phase 3 should branch from
+whatever ends up being the base, not stack silently on an unmerged branch.
+
+SPEC.md section 7. Build manual entry first — it is the
 guaranteed path and OCR is only an accelerator (CLAUDE.md rule 6). The results screen
 already has an "add data" button wired to `onAddData`, which currently just returns to
 the route picker and says outright that entry is not built yet; that is the seam to
