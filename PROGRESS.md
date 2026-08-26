@@ -114,6 +114,30 @@ fitted view where only ~20px of slack exists, dragging from a marker the zoom ha
 off screen, and demanding an offset of exactly zero when the real requirement is that no
 port is parked outside. Verify a failure against the app before believing it.
 
+**A fifth real bug, found on a real iPhone after 28/28 was green (2026-08-26):**
+zooming in and panning toward an edge left a port's marker permanently cut in half.
+`clampAxis` let a port's own coordinate reach exactly x=0 or x=viewport — the pixel
+where the map STOPS — and the marker's constant-radius dot draws half outside the
+viewBox at that exact spot, with no further pan able to fix it since that IS the clamp's
+limit. Every existing reachability check asserted only the raw coordinate was in
+`[0, viewport]`; none rendered the marker, which has real width. Fixed with a constant
+`EDGE_MARGIN` (= `HIT_RADIUS`, 22px) the clamp always leaves between a boundary port and
+the true edge — `src/ui/PortMap.tsx`'s `clampAxis`/`clampOffset`. Pinned by a new
+touch-test check, **29/29 passing**. Reproduced in headless Chromium at zoom as low as
+2x; no iOS-only gesture needed, so this was a real, verifiable geometry bug, not the
+untestable Safari-gesture gap. Checked and found no issue: the header/footer already pad
+for `env(safe-area-inset-top/bottom)` and the map surface is measured after layout via
+`getBoundingClientRect()`, so it should already exclude notch/home-indicator space.
+**Unchecked gap:** no `safe-area-inset-left/right` padding anywhere in the map — only
+matters in landscape on a notched phone, and this Chromium harness cannot simulate a
+non-zero safe-area inset to verify it either way.
+
+Also fixed in `scripts/touch-test.mjs` itself: this dev environment can have another
+process editing unrelated files in the same working tree while the touch harness runs,
+and Vite's file watcher then force-reloads the harness page mid-test, wiping
+`window.__probe` and crashing the script. `readMap` now re-installs the probe and
+retries on that specific failure — a test-harness robustness fix, not a map bug.
+
 **Still unrun:** `scripts/ui-test.mjs` and `app-harness.html` (results screen and ship
 presets) were written by a subagent that was cut off. Never executed, never reviewed.
 

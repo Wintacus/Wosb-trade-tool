@@ -78,6 +78,13 @@ const HIT_RADIUS = 22;
  * than a tap target, so two markers never sit close enough to be ambiguous.
  */
 const CLUSTER_SEPARATION = 46;
+/**
+ * Screen pixels the pan clamp always leaves between a port at the content's
+ * true edge and the SVG viewBox boundary. Equal to HIT_RADIUS so that when
+ * the map is panned as far as it goes, the boundary-most port is not just
+ * visible but still fully within its own 44px tap target — see clampAxis.
+ */
+const EDGE_MARGIN = HIT_RADIUS;
 /** Two taps closer together than this, in milliseconds, count as a double tap. */
 const DOUBLE_TAP_MS = 300;
 /** ...and no further apart than this, in screen pixels. */
@@ -95,36 +102,56 @@ const LABEL_EDGE_PAD = 60;
 const FALLBACK_SIZE = { width: 360, height: 480 };
 
 /**
- * Clamp one axis so the map never shows a gap at the edge.
+ * Clamp one axis so the map never shows a gap at the edge — and never pins a
+ * port's own marker exactly on the edge either, with no further pan able to
+ * free it. `margin` is a constant number of SCREEN pixels (not content
+ * pixels) reserved on both ends of `viewport`, so the clamp always stops
+ * `margin` px short of the true edge rather than flush with it.
+ *
+ * That margin is the fix for a bug reported from a real phone (2026-08-26):
+ * zooming in and panning toward an edge left a port's marker permanently cut
+ * in half, because the previous clamp let a port's own coordinate reach
+ * exactly x=0 or x=viewport — the pixel where the map STOPS. A marker has a
+ * constant on-screen radius at every zoom (by design, see the file header),
+ * so a coordinate sitting exactly on the boundary always draws half the dot
+ * outside the SVG's viewBox, which clips it — and because that boundary is
+ * also the clamp's own limit, there is no further pan that can fix it. Every
+ * previous touch-test check only asserted the port's raw coordinate was
+ * within [0, viewport]; none rendered the marker itself, so this shipped
+ * unnoticed through 28/28 passing checks. See EDGE_MARGIN below.
  *
  *  - When the content is LARGER than the viewport, the viewport must stay
- *    inside it: pan until an edge meets an edge and no further. Letting it go
- *    further is what put the user on a screen of blank sea at 4x with nothing
- *    to navigate by.
+ *    inside it: pan until an edge meets an edge (plus the margin) and no
+ *    further. Letting it go further is what put the user on a screen of
+ *    blank sea at 4x with nothing to navigate by.
  *  - When the content is SMALLER, there is nothing to pan through, so it is
- *    locked centred. Without this the map could be dragged sideways at 1x and
- *    simply stay there, stranding 31 of the 42 ports off screen with no
- *    spring-back — this map has no inertia or animation to bring them home.
+ *    locked centred (within the same margin-narrowed slack). Without this
+ *    the map could be dragged sideways at 1x and simply stay there,
+ *    stranding 31 of the 42 ports off screen with no spring-back — this map
+ *    has no inertia or animation to bring them home.
  */
 function clampAxis(
   offset: number,
   contentMin: number,
   contentMax: number,
   viewport: number,
+  margin: number,
 ): number {
+  const lo = margin;
+  const hi = viewport - margin;
   const span = contentMax - contentMin;
-  if (span <= viewport) {
+  if (span <= hi - lo) {
     // Smaller than the screen: it may slide within the slack, but never far
     // enough for any of it to leave. Locking it dead centre instead was worse
     // than it sounds — a locked axis silently overrides the pinch anchor, and
     // the port under the fingers drifted 53px because it could not follow
     // them vertically.
-    return Math.max(-contentMin, Math.min(viewport - contentMax, offset));
+    return Math.max(lo - contentMin, Math.min(hi - contentMax, offset));
   }
   // Larger than the screen: the screen must stay inside it, so panning stops
   // when an edge meets an edge. Going further shows blank sea with nothing to
   // navigate by.
-  return Math.max(viewport - contentMax, Math.min(-contentMin, offset));
+  return Math.max(hi - contentMax, Math.min(lo - contentMin, offset));
 }
 
 interface Pointer {
@@ -291,8 +318,8 @@ export function PortMap({
   function clampOffset(next: { x: number; y: number }, atScale: number) {
     const { minX, minY, maxX, maxY } = contentBounds;
     return {
-      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width),
-      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height),
+      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width, EDGE_MARGIN),
+      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height, EDGE_MARGIN),
     };
   }
 
