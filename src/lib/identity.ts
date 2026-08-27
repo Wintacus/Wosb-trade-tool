@@ -163,8 +163,30 @@ async function resolveIdentity(): Promise<string> {
       await ensureProfile(data.user.id);
       return data.user.id;
     }
-    // The stored account is gone or its password no longer works. Starting
-    // over is the only way forward, and it loses nothing the user can see.
+    // Only forget the account when the server actually REJECTED it.
+    //
+    // This used to discard the credentials on any truthy error, which is a
+    // much wider net than it looks: supabase-js does not throw on a network
+    // failure, it wraps it in AuthRetryableFetchError and RETURNS it here.
+    // An LTE blip, a captive portal, a Supabase hiccup, or iOS killing the
+    // request as the user switches back from the game -- every one of those
+    // landed in this branch, silently destroyed the credentials that ARE the
+    // account, and minted a new one. Past contributions stayed in the
+    // database attributed to an identity the user no longer held, and SPEC 8's
+    // "upgrade this account without losing data" stopped being possible.
+    //
+    // Only these mean "those credentials are wrong". Everything else --
+    // including a 429 rate limit and a 408 timeout, which are 4xx but say
+    // "ask again later" rather than "you are not that account" -- is "could
+    // not ask", which is not an answer and must not be acted on.
+    const status = (error as { status?: number } | null)?.status;
+    const rejected = status === 400 || status === 401 || status === 403;
+    if (!rejected) {
+      throw new Error(
+        'Could not reach the sign-in service, so your saved contributor ' +
+          'account was left alone. Check your connection and try again.',
+      );
+    }
     forgetCredentials();
   }
 

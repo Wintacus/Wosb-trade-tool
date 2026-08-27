@@ -202,6 +202,53 @@ price into a fresh-looking one. The recorded value sits beside the field.
 
 ## Next
 
+- **Eleven defects found by three parallel code reviews on 2026-08-27, all
+  reproduced before fixing and all fixed.** The five state bugs are described
+  above; these are the rest, and every database rule below was verified against
+  real Postgres both ways (broken before, refused after):
+  - `migrations/0002_trust_boundaries.sql` — **a future `observed_at` pinned any
+    price or tax rate forever**, because `prices_current` orders by it and the
+    insert policy never looked at it. Worse on port state: one poisoned row
+    containing only `tax_percent` pinned a port's tax at 99%, and tax feeds
+    every profit calculation. Freshness is `now - observed_at`, so the poisoned
+    value also wore the *freshest* badge. Now `observed_at <= now() + 1 hour`.
+  - Same migration — **an all-null row wiped a real price.** `NaN`/`Infinity`
+    become JSON `null` on the wire, and `prices_current` takes whole rows by
+    timestamp, so a content-free row became the current price. Guarded in the
+    database AND in `submitObservations`, which is the door OCR will use.
+  - Same migration — `submitted_by` is now `on delete set null`, so an abusive
+    contributor can actually be deleted; before, the FK blocked it the moment
+    they had contributed. Their honest rows survive unattributed. **The
+    append-only triggers had to be taught to allow authorship to be CLEARED but
+    never REASSIGNED** — reassignment stays impossible even for an admin.
+  - `schema.sql` — **`seasons` let any account `delete` every row.** It was the
+    one shared table that was not append-only. Now insert-only + admin.
+  - `schema.sql` — `prices_current` had no tie-break, so with two rows sharing
+    an `observed_at` the OLDER won and a correction was silently ignored.
+    `submitObservations` stamps one timestamp per batch, so ties are ordinary.
+  - `identity.ts` — **a network blip silently destroyed the user's account.**
+    supabase-js returns `AuthRetryableFetchError` as `{ error }` rather than
+    throwing, and the code forgot the credentials on any truthy error. Now only
+    400/401/403 count as rejection; 429 and 408 are explicitly NOT, because
+    "ask again later" is not "you are not that account".
+  - `submit.ts` — parsers capped at 2,147,483,647 (the `integer` column limit);
+    before, a "valid" entry was rejected by the column and took the whole batch
+    down with a raw Postgres error.
+  - `anon-session.ts` — the 8s timeout now covers reading the response body,
+    which `fetch` leaves unprotected once headers arrive.
+- **Checked and genuinely clean** (verified, not assumed): the service-role key
+  cannot reach the browser, `submitted_by` cannot be forged, entries cannot pose
+  as demo data, append-only holds at both policy and trigger layers, money never
+  touches a float (`parseGold` exact across all 20,010 one-decimal values), and
+  `parseSession` survived 31 hostile payloads without throwing.
+- **Known and NOT fixed, deliberately:** `/api/anon-session` has no effective
+  rate limit — the in-memory limiter is per warm instance, `X-Forwarded-For` is
+  client-supplied, and there is no origin check. It costs Supabase MAU and,
+  more importantly, means one attacker can mint unlimited "voters", which
+  undermines Phase 4's consensus weighting before it is built. Needs a real
+  shared limiter (or Vercel's `x-vercel-forwarded-for`) — **decide this before
+  building Phase 4 moderation on top of it.**
+
 - **The compaction below then hid every good's NAME, and the check missed it
   for an instructive reason.** The name shared a flex row with the "on record"
   summary; the summary was `shrink-0` and wide ("buy 7.0 · sell 7.0 · stock not
@@ -240,11 +287,9 @@ price into a fresh-looking one. The recorded value sits beside the field.
   browser cannot capture another app on iOS. When they ask for "just turn on
   screen sharing and autofill", the phone-viable answer is OCR from a
   screenshot, not 7.3. Say so rather than building something they cannot run.
-- **Housekeeping:** `scripts/ui-test.mjs` (24KB), `app-harness.html` and
-  `src/app-harness.tsx` (8.5KB) were written by a subagent that was cut off,
-  and have never been run or reviewed. `scripts/verify-ui.mjs` now covers this
-  ground properly. Either harvest anything useful out of them or delete them —
-  never-run test code that claims to test is worse than none.
+- **Phase 3 merged to `main` as PR #7 on 2026-08-26.** Production carries manual
+  entry, the silent account, session persistence, the map fixes, the build
+  stamp and the verification gate. Phase 3 remains OPEN for OCR only.
 
 - **THE bug, found 2026-08-26 after three wrong diagnoses: the app lost every
   bit of in-flight work on a page reload.** Route, ship and every typed price

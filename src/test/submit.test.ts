@@ -62,6 +62,17 @@ describe('parsing money as the game displays it', () => {
     }
   });
 
+  test('a value the database column cannot hold is refused here', () => {
+    // buy_price/sell_price/stock are Postgres `integer`. The parsers used to
+    // accept up to Number.MAX_SAFE_INTEGER, so a "valid" entry was rejected by
+    // the column — and because the insert is one statement, one mistyped field
+    // threw away the whole batch with a raw Postgres error in the user's face.
+    expect(parseGold('214748364.7')).toEqual({ ok: true, value: 2_147_483_647 });
+    expect(parseGold('214748364.8').ok).toBe(false);
+    expect(parseStock('2147483647')).toEqual({ ok: true, value: 2_147_483_647 });
+    expect(parseStock('2147483648').ok).toBe(false);
+  });
+
   test('stock must be a whole number', () => {
     expect(parseStock('12')).toEqual({ ok: true, value: 12 });
     expect(parseStock('12.5').ok).toBe(false);
@@ -158,11 +169,16 @@ describe('minting a contributor account retries once before giving up', () => {
 describe('the real database accepts the row this app inserts', () => {
   let t: TestDb;
   const USER = '44444444-4444-4444-8444-444444444444';
+  const ADMIN = '33333333-3333-4333-8333-333333333333';
 
   beforeAll(async () => {
     t = await createTestDb({ seed: true });
     await t.db.exec(`
-      insert into auth.users (id, email) values ('${USER}', 'anon@anon.wosb-trade-tool.invalid');
+      insert into auth.users (id, email) values
+        ('${USER}',  'anon@anon.wosb-trade-tool.invalid'),
+        ('${ADMIN}', 'admin@example.com');
+      insert into profiles (id) values ('${ADMIN}');
+      insert into admins (user_id) values ('${ADMIN}');
     `);
   }, 120_000);
 
@@ -236,6 +252,58 @@ describe('the real database accepts the row this app inserts', () => {
       }
       expect(refused, `source=${source} is_demo=${isDemo} must be refused`).toBe(true);
     }
+  });
+
+  test('a future-dated submission is refused', async () => {
+    // prices_current picks the newest observed_at, and the insert policy never
+    // looked at it — so one row dated 2999 won forever and every honest price
+    // after it sorted below. Verified against real Postgres before the fix.
+    let refused = false;
+    try {
+      await t.asUser(USER, INSERT, [
+        'na', 'fiji', 'coffee', null, 330, null, USER, 'manual', false, '2999-01-01',
+      ]);
+    } catch {
+      refused = true;
+    }
+    expect(refused, 'a price cannot be dated in the future').toBe(true);
+  });
+
+  test('a submission that records nothing is refused', async () => {
+    // NaN and Infinity become JSON null on the wire, so a caller holding one
+    // sends an all-null row — which then wins prices_current and destroys a
+    // real observation. Reproduced: 220/189/40 replaced by nulls.
+    let refused = false;
+    try {
+      await t.asUser(USER, INSERT, [
+        'na', 'fiji', 'nuts', null, null, null, USER, 'manual', false, new Date().toISOString(),
+      ]);
+    } catch {
+      refused = true;
+    }
+    expect(refused, 'a row with no buy, sell or stock is not an observation').toBe(true);
+  });
+
+  test('authorship may be cleared but never reassigned', async () => {
+    // ON DELETE SET NULL has to be able to unattribute a row so an abusive
+    // contributor can be deleted at all. Reassigning it to someone else would
+    // forge authorship, and must stay impossible for EVERYONE -- including an
+    // admin, who is the only role whose update reaches the trigger at all.
+    // (A contributor's update matches no policy, so it silently changes
+    // nothing rather than raising, which is why this checks both.)
+    let adminRefused = false;
+    try {
+      await t.asUser(ADMIN, `update price_submissions set submitted_by = $1 where good_id = 'sugar'`, [ADMIN]);
+    } catch {
+      adminRefused = true;
+    }
+    expect(adminRefused, 'not even an admin may reassign authorship').toBe(true);
+
+    const rows = (await t.asUser(
+      USER,
+      `select submitted_by from price_submissions where good_id = 'sugar' and not is_demo`,
+    )) as { submitted_by: string }[];
+    expect(rows[0]?.submitted_by, 'the original author is unchanged').toBe(USER);
   });
 
   test('the database refuses a negative price even if this app somehow sends one', async () => {

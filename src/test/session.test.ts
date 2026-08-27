@@ -23,6 +23,7 @@ import {
 
 function complete(overrides: Partial<SessionState> = {}): SessionState {
   return {
+    serverId: 'na',
     step: 'results',
     originId: 'fiji',
     destinationId: 'st_john',
@@ -103,6 +104,39 @@ describe('a resumed session is never allowed to break the app', () => {
     expect(parseSession(JSON.stringify(recent)).originId).toBe('fiji');
   });
 });
+
+describe('a session never crosses between servers', () => {
+  // "Servers are separate economies. Mixing NA and EU data produces garbage."
+  // Before the stamp existed, a session saved on North America restored
+  // identically onto Europe, and a price read off one economy was saved into
+  // the other WITH a success banner.
+  test('the stamp survives a round trip', () => {
+    expect(parseSession(JSON.stringify(complete({ serverId: 'na' }))).serverId).toBe('na');
+  });
+
+  test('a session for another server is refused', () => {
+    const stored = JSON.stringify(complete({ serverId: 'na' }));
+    expect(parseSessionForServerTest(stored, 'eu')).toEqual(EMPTY_SESSION);
+  });
+
+  test('a session for the same server is restored', () => {
+    const stored = JSON.stringify(complete({ serverId: 'na' }));
+    expect(parseSessionForServerTest(stored, 'na').originId).toBe('fiji');
+  });
+
+  test('a session with no stamp at all is not trusted', () => {
+    // Predates the stamp, so which economy it belongs to is unknowable.
+    const raw = JSON.stringify({ ...complete(), serverId: undefined });
+    expect(parseSessionForServerTest(raw, 'na')).toEqual(EMPTY_SESSION);
+  });
+});
+
+/** Mirrors loadSessionForServer without touching localStorage. */
+function parseSessionForServerTest(raw: string, serverId: string | null): SessionState {
+  const session = parseSession(raw);
+  if (!serverId || session.serverId !== serverId) return EMPTY_SESSION;
+  return session;
+}
 
 describe('drafts are dropped once they reach the database', () => {
   test('saving one port leaves other ports alone', () => {

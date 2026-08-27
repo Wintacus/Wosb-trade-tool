@@ -19,6 +19,16 @@ import type { Good, Tenths } from '../domain/types';
  * from a model that must never be structurally trusted.
  */
 
+/**
+ * The largest value the database columns can hold (Postgres `integer`).
+ *
+ * The parsers used to accept anything up to Number.MAX_SAFE_INTEGER, so a
+ * value the client called valid was rejected by the column -- and because the
+ * insert is a single statement, one mistyped field threw away the whole batch
+ * with a raw "out of range for type integer" in the user's face.
+ */
+const MAX_STORED = 2_147_483_647;
+
 /** What a person typed into one row of the entry screen. */
 export interface DraftRow {
   goodId: string;
@@ -71,7 +81,9 @@ export function parseGold(raw: string): { ok: true; value: Tenths | null } | { o
   }
   const [whole, tenth = '0'] = text.split('.');
   const value = Number(whole) * 10 + Number(tenth);
-  if (!Number.isSafeInteger(value)) return { ok: false, error: 'That number is too large.' };
+  if (!Number.isSafeInteger(value) || value > MAX_STORED) {
+    return { ok: false, error: 'That number is too large.' };
+  }
   return { ok: true, value };
 }
 
@@ -83,7 +95,9 @@ export function parseStock(raw: string): { ok: true; value: number | null } | { 
     return { ok: false, error: 'Enter a whole number, or leave it blank if the game shows none.' };
   }
   const value = Number(text);
-  if (!Number.isSafeInteger(value)) return { ok: false, error: 'That number is too large.' };
+  if (!Number.isSafeInteger(value) || value > MAX_STORED) {
+    return { ok: false, error: 'That number is too large.' };
+  }
   return { ok: true, value };
 }
 
@@ -185,6 +199,35 @@ export async function submitObservations(input: SubmitInput): Promise<number> {
       'The app is not connected to its database, so nothing can be saved. ' +
         'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are missing from this deployment.',
     );
+  }
+
+  // Guard the values one final time, at the point every caller meets.
+  //
+  // `validateRows` covers the entry screen, but submitObservations is the
+  // shared door -- OCR is meant to come through it too, from a model whose
+  // output must never be trusted structurally. The specific hazard: NaN and
+  // Infinity survive every `typeof x === 'number'` check and then become JSON
+  // `null` on the wire, producing a row that says nothing at all. Because
+  // prices_current takes whole rows by timestamp, that row becomes the current
+  // price and destroys a real observation. Reproduced: 220/189/40 -> nulls.
+  for (const row of input.rows) {
+    for (const [field, value] of [
+      ['buy price', row.buyPrice],
+      ['sell price', row.sellPrice],
+      ['stock', row.stock],
+    ] as const) {
+      if (value === null) continue;
+      if (!Number.isInteger(value) || value < 0 || value > MAX_STORED) {
+        throw new Error(
+          `Refusing to save ${row.goodId}: ${field} is not a usable whole number.`,
+        );
+      }
+    }
+    if (row.buyPrice === null && row.sellPrice === null && row.stock === null) {
+      throw new Error(
+        `Refusing to save ${row.goodId}: nothing was recorded for it.`,
+      );
+    }
   }
 
   const userId = await ensureIdentity();

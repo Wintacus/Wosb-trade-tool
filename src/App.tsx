@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { planTrip } from './domain/calculator';
 import { toTenths } from './domain/money';
 import { suggestDestinations } from './domain/suggest';
@@ -18,7 +18,7 @@ import {
   type ShipPreset,
 } from './lib/prefs';
 import {
-  loadSession,
+  loadSessionForServer,
   saveSession,
   withoutPortDrafts,
   type SessionDraft,
@@ -96,7 +96,7 @@ export default function App() {
    * switch could silently dump the user at step 1 having lost the lot. See
    * src/lib/session.ts.
    */
-  const [restored] = useState(() => loadSession());
+  const [restored] = useState(() => loadSessionForServer(loadPrefs().serverId));
 
   const [step, setStep] = useState<Step>(restored.step);
   const [originId, setOriginId] = useState<string | null>(restored.originId);
@@ -137,6 +137,8 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  const serverId = prefs.serverId;
+
   /**
    * Write the in-flight work to storage on every change.
    *
@@ -146,6 +148,7 @@ export default function App() {
    */
   useEffect(() => {
     saveSession({
+      serverId,
       step,
       originId,
       destinationId,
@@ -154,7 +157,7 @@ export default function App() {
       entryPortId: entry?.portId ?? null,
       drafts,
     });
-  }, [step, originId, destinationId, shipChoice, entry, drafts]);
+  }, [serverId, step, originId, destinationId, shipChoice, entry, drafts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +173,23 @@ export default function App() {
     };
   }, []);
 
-  const serverId = prefs.serverId;
+  /**
+   * Changing server abandons the entry sheet and every unsaved draft.
+   *
+   * `submitObservations` stamps whatever server is selected AT SAVE TIME, so
+   * leaving the sheet open across a switch meant prices read off one economy
+   * were written into the other — with a success banner. Drafts cannot be
+   * migrated either: the same port has different prices on each server, so
+   * carrying the numbers across would be inventing observations.
+   */
+  const previousServer = useRef(serverId);
+  useEffect(() => {
+    if (previousServer.current !== null && previousServer.current !== serverId) {
+      setEntry(null);
+      setDrafts({});
+    }
+    previousServer.current = serverId;
+  }, [serverId]);
 
   useEffect(() => {
     if (!serverId) return;
@@ -366,7 +385,8 @@ export default function App() {
           goods={reference.goods}
           prices={prices}
           now={now}
-          initialPortId={entry.portId}
+          portId={entry.portId}
+          onPortChange={(id) => setEntry({ portId: id })}
           drafts={toDraftRows(entry.portId ? (drafts[entry.portId] ?? {}) : {})}
           onDraftsChange={(next) => {
             const portId = entry.portId;

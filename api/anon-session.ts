@@ -183,6 +183,7 @@ async function run(req: Req, res: Res): Promise<void> {
       signal: controller.signal,
     });
   } catch (error) {
+    clearTimeout(timer);
     const timedOut = error instanceof Error && error.name === 'AbortError';
     res.status(timedOut ? 504 : 502).json({
       error: timedOut
@@ -193,12 +194,15 @@ async function run(req: Req, res: Res): Promise<void> {
           }`,
     });
     return;
-  } finally {
-    clearTimeout(timer);
   }
 
   if (!response.ok) {
+    // Read the body BEFORE clearing the timeout: fetch resolves as soon as the
+    // headers arrive, so a hung body would otherwise sit here unprotected
+    // until Vercel's own gateway produced exactly the unreadable 504 this file
+    // exists to prevent.
     const detail = await response.text();
+    clearTimeout(timer);
     res.status(502).json({
       error: `The database refused to create a contributor account (${response.status}).`,
       detail: detail.slice(0, 400),
@@ -211,5 +215,6 @@ async function run(req: Req, res: Res): Promise<void> {
   // rather than being reimplemented here. The credentials are the account: they
   // are stored in that browser and nowhere else, and they are what Phase 4
   // turns into a recoverable identity.
+  clearTimeout(timer);
   res.status(200).json({ email, password });
 }

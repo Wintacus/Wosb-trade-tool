@@ -238,6 +238,69 @@ try {
     fail('typed prices survive a reload', 'no price input found to type into');
   }
 
+  // --- price entry works when opened BEFORE a route exists --------------
+  //
+  // The most natural way into this app: you are standing in a port with no
+  // route planned, and you tap "Add prices". That path was completely broken
+  // and shipped that way -- every keystroke was discarded, the field stayed
+  // empty and the save bar stayed "Nothing entered yet".
+  //
+  // The cause was two sources of truth for one fact: PriceEntry held its own
+  // `portId`, App keyed the drafts by a separate copy, and with no route the
+  // copy was null so `onDraftsChange` early-returned on every keystroke.
+  //
+  // The checks above all missed it because they open the sheet only AFTER
+  // completing the four-step flow, which makes App's copy non-null. Testing
+  // the convenient path is not testing the path people use.
+  {
+    await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => {
+      try { localStorage.clear(); } catch { /* private mode */ }
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.getByText('North America', { exact: false }).first().click().catch(() => {});
+    await page.waitForTimeout(500);
+
+    const add = page.getByRole('button', { name: 'Add prices', exact: true });
+    await add.click({ timeout: 8000 });
+    await page.waitForTimeout(400);
+    await page.getByText(ORIGIN, { exact: false }).first().click({ timeout: 8000 });
+    await page.waitForTimeout(700);
+
+    const field = page.locator('input[inputmode="decimal"]').first();
+    await field.fill('18.9');
+    await page.waitForTimeout(400);
+    const typed = await field.inputValue().catch(() => '');
+    if (typed === '18.9') {
+      pass('prices can be typed when entry is opened before a route', 'field holds 18.9');
+    } else {
+      fail(
+        'prices can be typed when entry is opened before a route',
+        `typed "18.9" but the field reads "${typed}" — keystrokes are being discarded`,
+      );
+    }
+
+    // --- and changing port must not carry the numbers to the wrong port ---
+    //
+    // Worse than losing them: the header said one port while the fields still
+    // held another port's numbers, and Save wrote them under the port on
+    // screen WITH a success banner. Silent bad data in a shared database.
+    await page.getByRole('button', { name: 'Change port' }).click({ timeout: 8000 });
+    await page.waitForTimeout(400);
+    await page.getByText(DEST, { exact: false }).first().click({ timeout: 8000 });
+    await page.waitForTimeout(700);
+    const heading = await page.locator('h2').first().innerText().catch(() => '');
+    const after = await page.locator('input[inputmode="decimal"]').first().inputValue().catch(() => 'x');
+    if (heading.includes(DEST) && after === '') {
+      pass('changing port clears the previous port\'s numbers', `now "${heading.trim()}"`);
+    } else {
+      fail(
+        'changing port clears the previous port\'s numbers',
+        `heading "${heading.trim()}" but the field still reads "${after}"`,
+      );
+    }
+  }
+
   // --- every good's NAME is actually readable ---------------------------
   //
   // Reported from a phone 2026-08-26: after the row was compacted the goods

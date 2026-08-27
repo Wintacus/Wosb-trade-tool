@@ -143,7 +143,8 @@ create table if not exists port_state_submissions (
   port_level          integer,
   port_type           text,      -- 'city' | 'settlement'
   has_market          boolean,   -- null = unobserved, not "no market"
-  submitted_by        uuid references profiles(id),   -- null for demo rows
+  -- SET NULL: see price_submissions. A contributor must remain deletable.
+  submitted_by        uuid references profiles(id) on delete set null,   -- null for demo rows
   source              text not null default 'manual', -- manual | ocr | demo
   is_demo             boolean not null default false,
   observed_at         timestamptz not null default now(),
@@ -152,7 +153,12 @@ create table if not exists port_state_submissions (
   constraint port_tax_range      check (tax_percent is null or (tax_percent >= 0 and tax_percent <= 100)),
   constraint port_fee_nonneg     check (docking_fee is null or docking_fee >= 0),
   constraint port_min_rate_range check (min_ship_rate is null or (min_ship_rate >= 1 and min_ship_rate <= 7)),
-  constraint port_level_nonneg   check (port_level is null or port_level >= 0)
+  constraint port_level_nonneg   check (port_level is null or port_level >= 0),
+  -- port_state_current resolves each column independently by observed_at, so
+  -- one future-dated row containing only tax_percent pins that port's tax rate
+  -- permanently -- and tax feeds every profit calculation. See migrations/0002.
+  constraint port_state_observed_not_future
+    check (observed_at <= now() + interval '1 hour')
 );
 
 create index if not exists port_state_lookup_idx
@@ -228,7 +234,10 @@ create table if not exists price_submissions (
   buy_price    integer,   -- tenths of gold, integer
   sell_price   integer,
   stock        integer,   -- null if the game does not show a quantity
-  submitted_by uuid references profiles(id),   -- null for demo rows
+  -- SET NULL so an abusive contributor can actually be deleted: without it the
+  -- delete is blocked the moment they have submitted anything. Their rows
+  -- survive unattributed rather than being destroyed with them.
+  submitted_by uuid references profiles(id) on delete set null,   -- null for demo rows
   source       text not null default 'manual', -- manual | ocr | screenshare | demo
   is_demo      boolean not null default false,
   observed_at  timestamptz not null default now(),
@@ -238,7 +247,15 @@ create table if not exists price_submissions (
   -- price would read as free money to the profit arithmetic.
   constraint price_buy_nonneg   check (buy_price  is null or buy_price  >= 0),
   constraint price_sell_nonneg  check (sell_price is null or sell_price >= 0),
-  constraint price_stock_nonneg check (stock      is null or stock      >= 0)
+  constraint price_stock_nonneg check (stock      is null or stock      >= 0),
+  -- A row dated in the future wins prices_current forever, because that view
+  -- orders by observed_at. An hour absorbs phone clock skew; more would be
+  -- useful only to someone pinning a price. See migrations/0002.
+  constraint price_observed_not_future check (observed_at <= now() + interval '1 hour'),
+  -- NaN and Infinity become JSON null on the wire, producing a content-free
+  -- row that would otherwise become the current price and destroy a real one.
+  constraint price_has_some_value
+    check (buy_price is not null or sell_price is not null or stock is not null)
 );
 
 create index if not exists price_submissions_lookup_idx
@@ -272,7 +289,12 @@ where not flagged
         and not r.flagged
     )
   )
-order by server_id, port_id, good_id, observed_at desc;
+-- `id desc` is the tie-break, and it is not cosmetic: submitObservations
+-- stamps ONE observed_at across a whole batch and accepts a caller-supplied
+-- one, so two rows sharing a timestamp are ordinary. Without it the OLDER row
+-- won -- verified, consistently -- so a correction re-submitted with the same
+-- timestamp was silently ignored.
+order by server_id, port_id, good_id, observed_at desc, id desc;
 
 -- ---------------------------------------------------------------------
 -- Per-user data
@@ -534,12 +556,25 @@ returns trigger
 language plpgsql
 as $$
 begin
+  -- The foreign key's ON DELETE SET NULL must be able to unattribute a row
+  -- when a contributor is removed, and that is an UPDATE, so the append-only
+  -- rule below would otherwise block the delete entirely -- which is the bug
+  -- this is paired with. Clearing authorship is the ONLY change permitted
+  -- here: setting submitted_by to a DIFFERENT user would be forging it, which
+  -- the insert policy exists to prevent and must stay impossible afterwards.
+  if new.submitted_by is distinct from old.submitted_by
+     and new.submitted_by is not null
+  then
+    raise exception
+      'price_submissions.submitted_by may only be cleared, never reassigned';
+  end if;
+
   if (new.id, new.server_id, new.port_id, new.good_id, new.buy_price,
-      new.sell_price, new.stock, new.submitted_by, new.source, new.is_demo,
+      new.sell_price, new.stock, new.source, new.is_demo,
       new.observed_at)
      is distinct from
      (old.id, old.server_id, old.port_id, old.good_id, old.buy_price,
-      old.sell_price, old.stock, old.submitted_by, old.source, old.is_demo,
+      old.sell_price, old.stock, old.source, old.is_demo,
       old.observed_at)
   then
     raise exception
@@ -585,14 +620,23 @@ returns trigger
 language plpgsql
 as $$
 begin
+  -- See price_submissions_flag_only: ON DELETE SET NULL must be able to clear
+  -- authorship, and only clear it. Reassignment stays impossible.
+  if new.submitted_by is distinct from old.submitted_by
+     and new.submitted_by is not null
+  then
+    raise exception
+      'port_state_submissions.submitted_by may only be cleared, never reassigned';
+  end if;
+
   if (new.id, new.server_id, new.port_id, new.tax_percent, new.docking_fee,
       new.min_ship_rate, new.controlling_faction, new.port_level,
-      new.port_type, new.has_market, new.submitted_by, new.source,
+      new.port_type, new.has_market, new.source,
       new.is_demo, new.observed_at)
      is distinct from
      (old.id, old.server_id, old.port_id, old.tax_percent, old.docking_fee,
       old.min_ship_rate, old.controlling_faction, old.port_level,
-      old.port_type, old.has_market, old.submitted_by, old.source,
+      old.port_type, old.has_market, old.source,
       old.is_demo, old.observed_at)
   then
     raise exception
@@ -622,13 +666,26 @@ end $$;
 
 -- ---------------------------------------------------------------------
 -- seasons: shared world state, any authenticated user may record one.
+--
+-- This was `for all ... using (true) with check (true)` plus a delete grant,
+-- which meant any account could empty the table. Verified: an ordinary
+-- contributor ran `delete from seasons` and removed every row. Since
+-- /api/anon-session hands an authenticated account to anyone who asks, that
+-- was "anyone on the internet can delete all seasonal data".
+--
+-- Every other shared table here is append-only with admin correction. This one
+-- was the exception, for no reason anybody recorded.
 -- ---------------------------------------------------------------------
 drop policy if exists seasons_read_all     on seasons;
 drop policy if exists seasons_write_authed on seasons;
+drop policy if exists seasons_insert_authed on seasons;
+drop policy if exists seasons_admin        on seasons;
 
 create policy seasons_read_all on seasons for select using (true);
-create policy seasons_write_authed on seasons
-  for all to authenticated using (true) with check (true);
+create policy seasons_insert_authed on seasons
+  for insert to authenticated with check (true);
+create policy seasons_admin on seasons
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 -- ---------------------------------------------------------------------
 -- ocr_corrections: admins read, any authenticated user inserts.
@@ -683,7 +740,10 @@ grant select, insert on ocr_corrections to authenticated;
 -- Per-user data. Policies restrict every one of these to the owner's rows.
 grant select, insert, update, delete on profiles, ship_presets, saved_routes
   to authenticated;
-grant select, insert, update, delete on seasons to authenticated;
+-- Insert only: correcting or removing a season is an admin action, and the
+-- policy above is what allows it. A delete grant here is what let any account
+-- empty the table.
+grant select, insert on seasons to authenticated;
 
 -- Needed for the bigserial id columns on inserts.
 grant usage, select on all sequences in schema public to authenticated;
