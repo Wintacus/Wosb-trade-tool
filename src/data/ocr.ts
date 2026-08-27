@@ -26,6 +26,15 @@ import type { DraftRow } from './submit';
  */
 export const MAX_EDGE = 1568;
 
+/**
+ * How long the browser waits for a reading.
+ *
+ * Longer than the server's own 50s budget, so a readable JSON error from the
+ * function always wins the race against this blunter one; short enough that a
+ * platform-level timeout does not leave the button stuck on "Reading…".
+ */
+const CLIENT_TIMEOUT_MS = 70_000;
+
 /** Above this the PNG is re-encoded as JPEG; below it, stay lossless. */
 const PNG_BUDGET_BYTES = 2_000_000;
 
@@ -185,15 +194,43 @@ export async function readScreenshot(file: File): Promise<Extraction> {
   const token = data.session?.access_token;
   if (!token) throw new Error('Could not confirm who is uploading, so nothing was sent.');
 
-  const response = await fetch('/api/ocr', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ image: image.base64, mediaType: image.mediaType }),
-  });
+  // Bounded here as well as on the server, because the failure this guards
+  // against is the server never getting to answer at all: a platform-level
+  // gateway timeout arrives as an unparseable HTML 504, or as nothing. Without
+  // this the button would sit on "Reading…" forever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch('/api/ocr', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ image: image.base64, mediaType: image.mediaType }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(
+        `Reading the screenshot took longer than ${CLIENT_TIMEOUT_MS / 1000} seconds and was ` +
+          'given up on. Nothing was changed. If this keeps happening the ' +
+          "deployment's function time limit is probably too short for a vision " +
+          'request — type the prices in for now.',
+      );
+    }
+    throw new Error('Could not reach the screenshot reader. Check your connection and try again.');
+  }
+  clearTimeout(timer);
 
   const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) {
-    const detail = typeof body?.error === 'string' ? body.error : `The reader returned ${response.status}.`;
+    const detail =
+      typeof body?.error === 'string'
+        ? body.error
+        : response.status === 504
+          ? 'The reader ran out of time on the server. Nothing was changed.'
+          : `The reader returned ${response.status}.`;
     throw new Error(detail);
   }
   return body as unknown as Extraction;

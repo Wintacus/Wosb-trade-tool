@@ -74,6 +74,7 @@ export function OcrCapture({
 
   const extraction = result?.extraction ?? null;
   const mismatch = extraction?.portName ? !namesAgree(extraction.portName, portName) : false;
+  const flagged = extraction?.rows.filter((row) => row.flags.length > 0) ?? [];
 
   return (
     <section className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
@@ -176,6 +177,30 @@ export function OcrCapture({
                 ))}
               </ul>
             </details>
+          ) : null}
+
+          {/*
+            Values that were read but look wrong -- a price outside anything
+            ever recorded for that good, a field that could not be parsed. They
+            are in the sheet either way; this is what says which ones to look
+            at first. Without it they are indistinguishable from the rest and
+            the whole list has to be re-checked by hand, which is the work this
+            feature exists to remove.
+          */}
+          {flagged.length > 0 ? (
+            <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-amber-100">
+              <p className="font-medium">
+                <span aria-hidden="true">⚠</span> Check {flagged.length}{' '}
+                {flagged.length === 1 ? 'value' : 'values'} first:
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-xs">
+                {flagged.map((row) => (
+                  <li key={row.goodId}>
+                    <strong>{row.printed}</strong> — {row.flags.join(' ')}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           {extraction.notes ? (

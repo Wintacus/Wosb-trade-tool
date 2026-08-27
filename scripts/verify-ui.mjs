@@ -380,7 +380,17 @@ try {
         // most damaging thing this feature can do, and it is silent.
         portName: 'Fiji Bay',
         portKind: 'city',
-        rows: [readable('beer', 'Beer', '9.9'), readable('dates', 'Dates', '11.1')],
+        rows: [
+          readable('beer', 'Beer', '9.9'),
+          {
+            ...readable('dates', 'Dates', '11.1'),
+            // A value that was read but looks wrong. It goes into the sheet
+            // either way -- the point is that the person is told which ones to
+            // look at first, otherwise the whole list has to be re-checked and
+            // the feature has saved nobody anything.
+            flags: ['Higher than any Dates price recorded before — check the decimal point.'],
+          },
+        ],
         rejected: [{ printed: 'Krakenweed', reason: 'Not one of the goods this app knows about.' }],
         notes: null,
       },
@@ -459,6 +469,15 @@ try {
       pass('goods the app does not know are reported, not guessed at');
     } else {
       fail('goods the app does not know are reported, not guessed at', 'no skipped-row summary');
+    }
+
+    if (/Check 1 value first/.test(state.body) && state.body.includes('decimal point')) {
+      pass('values that look wrong are pointed out by name');
+    } else {
+      fail(
+        'values that look wrong are pointed out by name',
+        'no flag summary, so a misread decimal point is indistinguishable from a good reading',
+      );
     }
 
     // --- and the filled values survive a reload, like typed ones do -------
