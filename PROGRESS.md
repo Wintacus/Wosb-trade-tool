@@ -240,11 +240,9 @@ price into a fresh-looking one. The recorded value sits beside the field.
   browser cannot capture another app on iOS. When they ask for "just turn on
   screen sharing and autofill", the phone-viable answer is OCR from a
   screenshot, not 7.3. Say so rather than building something they cannot run.
-- **Housekeeping:** `scripts/ui-test.mjs` (24KB), `app-harness.html` and
-  `src/app-harness.tsx` (8.5KB) were written by a subagent that was cut off,
-  and have never been run or reviewed. `scripts/verify-ui.mjs` now covers this
-  ground properly. Either harvest anything useful out of them or delete them —
-  never-run test code that claims to test is worse than none.
+- **Phase 3 merged to `main` as PR #7 on 2026-08-26.** Production carries manual
+  entry, the silent account, session persistence, the map fixes, the build
+  stamp and the verification gate. Phase 3 remains OPEN for OCR only.
 
 - **THE bug, found 2026-08-26 after three wrong diagnoses: the app lost every
   bit of in-flight work on a page reload.** Route, ship and every typed price
