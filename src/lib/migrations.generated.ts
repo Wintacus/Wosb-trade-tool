@@ -8,4 +8,5 @@
 
 export const expectedMigrations: string[] = [
   '0001_value_constraints.sql',
+  '0002_trust_boundaries.sql',
 ];
