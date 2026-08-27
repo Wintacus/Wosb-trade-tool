@@ -7,7 +7,9 @@ import {
   type DraftRow,
   type FieldProblem,
 } from '../data/submit';
+import { applyExtraction, logCorrections, type Extraction } from '../data/ocr';
 import { FreshnessBadge } from './FreshnessBadge';
+import { OcrCapture } from './OcrCapture';
 import { PortPicker } from './PortPicker';
 import { Button, ErrorNote, Panel } from './Ui';
 import { portLabel } from './ports';
@@ -91,6 +93,8 @@ export function PriceEntry({
   const [savedCount, setSavedCount] = useState<number | null>(null);
   const [problems, setProblems] = useState<FieldProblem[]>([]);
   const [warnings, setWarnings] = useState<FieldProblem[]>([]);
+  /** Which game screen the last upload was, for the correction log only. */
+  const [ocrScreen, setOcrScreen] = useState<string | null>(null);
 
   const port = ports.find((p) => p.id === portId) ?? null;
 
@@ -157,6 +161,20 @@ export function PriceEntry({
     setSaving(true);
     try {
       const count = await submitObservations({ serverId, portId, rows: result.rows });
+      // Recorded after the save, never before: a correction to something that
+      // was not stored is not a correction, and this is the one signal that
+      // shows where screenshot reading is systematically wrong (SPEC.md 7.2).
+      // Best effort -- a failure here must not turn a successful save into an
+      // error on the screen.
+      // Every row a screenshot touched, not just the ones with something left
+      // in them: deleting a value the reader invented is a correction too, and
+      // it is the most important kind to know about.
+      if (ocrScreen) {
+        void logCorrections(
+          Object.values(drafts).filter((row) => row.ocr),
+          ocrScreen,
+        );
+      }
       onDraftsChange({});
       setSavedCount(count);
       onSaved(count);
@@ -214,6 +232,17 @@ export function PriceEntry({
           </Button>
         </div>
       </div>
+
+      <OcrCapture
+        portName={portLabel(port)}
+        onApply={(extraction: Extraction) => {
+          setSavedCount(null);
+          setOcrScreen(extraction.screen);
+          const merged = applyExtraction(extraction, drafts);
+          onDraftsChange(merged.drafts);
+          return merged;
+        }}
+      />
 
       <label className="mt-4 block">
         <span className="sr-only">Search goods</span>
@@ -434,6 +463,14 @@ function GoodRow({
   problemFor: (goodId: string, field: FieldProblem['field']) => string | null;
 }) {
   const touched = Boolean(draft && (draft.buyText || draft.sellText || draft.stockText));
+  // Still showing exactly what the screenshot proposed. Retyping any field
+  // clears the badge, because from then on it is the person's number.
+  const fromScreenshot = Boolean(
+    draft?.ocr &&
+      draft.buyText.trim() === draft.ocr.buyText.trim() &&
+      draft.sellText.trim() === draft.ocr.sellText.trim() &&
+      draft.stockText.trim() === draft.ocr.stockText.trim(),
+  );
   // A draft buy price keeps its own field visible even if the section's Buy
   // column is switched off again, so a typed number can never be hidden from
   // the person who typed it.
@@ -473,6 +510,20 @@ function GoodRow({
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 flex-1 truncate font-medium text-slate-100">
           {good.name}
+          {/*
+            Which numbers a machine put there, and which a person did. Without
+            it the sheet after an upload looks exactly like a sheet somebody
+            filled in themselves, and there is nothing to tell you what still
+            needs checking.
+          */}
+          {fromScreenshot ? (
+            <span
+              className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 align-middle text-[11px] text-sky-300"
+              title="Read from a screenshot — check it"
+            >
+              read
+            </span>
+          ) : null}
         </span>
         {current ? (
           <FreshnessBadge

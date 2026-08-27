@@ -36,6 +36,22 @@ export interface DraftRow {
   buyText: string;
   sellText: string;
   stockText: string;
+  /**
+   * What a screenshot read proposed for this row, if one did.
+   *
+   * Present only on rows OCR filled in. It is what makes the difference
+   * between "a person typed 18.9" and "a machine read 18.9 and a person let it
+   * stand" recordable, which is the whole point of `ocr_corrections`: without
+   * the original there is nothing to compare a correction against, and
+   * systematic misreads stay invisible.
+   */
+  ocr?: OcrOrigin;
+}
+
+export interface OcrOrigin {
+  buyText: string;
+  sellText: string;
+  stockText: string;
 }
 
 /** A validated row, ready for the database. */
@@ -44,6 +60,15 @@ export interface ParsedRow {
   buyPrice: Tenths | null;
   sellPrice: Tenths | null;
   stock: number | null;
+  /**
+   * Where this row came from, when it differs from the batch.
+   *
+   * One save can mix both: a screenshot fills twenty rows and the person
+   * corrects two by hand and adds a third the screenshot missed. Stamping the
+   * whole batch 'ocr' would credit the machine with work it did not do, and
+   * Phase 4 weights contributions by source -- so the label is per row.
+   */
+  source?: 'manual' | 'ocr';
 }
 
 export interface FieldProblem {
@@ -165,10 +190,27 @@ export function validateRows(drafts: readonly DraftRow[], goods: readonly Good[]
       buyPrice: buy.value,
       sellPrice: sell.value,
       stock: stock.value,
+      // Stamped 'ocr' only if the value being saved is still the one the
+      // screenshot proposed. The moment a person edits the field it is their
+      // observation, and calling it machine-read would misattribute both the
+      // credit and the blame. Left off entirely otherwise, so a hand-typed row
+      // is the same object it has always been.
+      ...(unchangedFromOcr(draft) ? { source: 'ocr' as const } : {}),
     });
   }
 
   return { rows, errors, warnings };
+}
+
+/** True when a screenshot filled this row and nothing in it has been retyped. */
+function unchangedFromOcr(draft: DraftRow): boolean {
+  const origin = draft.ocr;
+  if (!origin) return false;
+  return (
+    draft.buyText.trim() === origin.buyText.trim() &&
+    draft.sellText.trim() === origin.sellText.trim() &&
+    draft.stockText.trim() === origin.stockText.trim()
+  );
 }
 
 function tenths(value: Tenths): string {
@@ -241,7 +283,7 @@ export async function submitObservations(input: SubmitInput): Promise<number> {
     sell_price: row.sellPrice,
     stock: row.stock,
     submitted_by: userId,
-    source: input.source ?? 'manual',
+    source: row.source ?? input.source ?? 'manual',
     is_demo: false,
     observed_at: observedAt,
   }));

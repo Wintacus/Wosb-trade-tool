@@ -184,8 +184,55 @@ async function checkSchemaState(): Promise<Check> {
   };
 }
 
+/**
+ * Can this deployment read screenshots?
+ *
+ * The answer depends on a secret nobody can see from the browser, so the
+ * endpoint is asked. It replies with which pieces of configuration are missing
+ * -- never their values -- which turns "is the key set in Vercel?" from a
+ * question somebody has to go and look up in a dashboard into a line on this
+ * page.
+ */
+async function checkOcrReady(): Promise<Check> {
+  const id = 'ocr';
+  const label = 'Screenshot reading';
+  try {
+    const response = await fetch('/api/ocr', { method: 'GET' });
+    if (!response.ok) {
+      return {
+        id,
+        label,
+        status: 'warn',
+        detail: `The reader endpoint answered ${response.status}. Screenshot reading is off; manual entry is unaffected.`,
+      };
+    }
+    const body = (await response.json()) as { ready?: boolean; missing?: string[]; model?: string };
+    if (body.ready) {
+      return { id, label, status: 'pass', detail: `Ready, using ${body.model ?? 'the configured model'}.` };
+    }
+    return {
+      id,
+      label,
+      // A warning, not a failure: everything else in the app works without it.
+      status: 'warn',
+      detail:
+        `Off, because ${(body.missing ?? ['something']).join(' and ')} ` +
+        'is not set for this deployment. Add it in Vercel under Settings, ' +
+        'Environment Variables, then redeploy — variables only apply to new ' +
+        'deployments. Manual entry works either way.',
+    };
+  } catch (error) {
+    return {
+      id,
+      label,
+      status: 'warn',
+      detail: `Could not ask the reader endpoint: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 export async function runDiagnostics(): Promise<Check[]> {
-  const checks: Check[] = [checkNoSecretsInBundle()];
+  const checks: Check[] = [checkNoSecretsInBundle(), await checkOcrReady()];
 
   if (!supabaseConfigured) {
     checks.push({

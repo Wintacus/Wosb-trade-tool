@@ -46,6 +46,22 @@ export interface SessionDraft {
   buyText: string;
   sellText: string;
   stockText: string;
+  /**
+   * What a screenshot read gave for this row, if one filled it in.
+   *
+   * Kept beside the current text rather than replacing it so the review screen
+   * can say which numbers a person typed and which a machine proposed, and so
+   * `ocr_corrections` can record what was changed and to what (SPEC.md 7.2).
+   * Absent on every hand-typed row.
+   */
+  ocr?: OcrOrigin;
+}
+
+/** The three values a screenshot read proposed, exactly as it reported them. */
+export interface OcrOrigin {
+  buyText: string;
+  sellText: string;
+  stockText: string;
 }
 
 export interface SessionState {
@@ -97,6 +113,16 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function parseOcrOrigin(value: unknown): OcrOrigin | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  return {
+    buyText: typeof row.buyText === 'string' ? row.buyText : '',
+    sellText: typeof row.sellText === 'string' ? row.sellText : '',
+    stockText: typeof row.stockText === 'string' ? row.stockText : '',
+  };
+}
+
 function parseDraft(value: unknown): SessionDraft | null {
   if (typeof value !== 'object' || value === null) return null;
   const row = value as Record<string, unknown>;
@@ -105,6 +131,8 @@ function parseDraft(value: unknown): SessionDraft | null {
     sellText: typeof row.sellText === 'string' ? row.sellText : '',
     stockText: typeof row.stockText === 'string' ? row.stockText : '',
   };
+  const ocr = parseOcrOrigin(row.ocr);
+  if (ocr) draft.ocr = ocr;
   // An all-blank row is not worth restoring; it is indistinguishable from
   // never having been touched.
   return draft.buyText || draft.sellText || draft.stockText ? draft : null;

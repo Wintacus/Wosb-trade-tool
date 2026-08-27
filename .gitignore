@@ -31,3 +31,4 @@ coverage/
 # Scratch dir for the serverless ESM load test
 .apitest/
 .verified
+.status-checkpoint

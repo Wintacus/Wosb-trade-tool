@@ -12,6 +12,30 @@ Read this before doing anything in this repo.
 - **Wants honesty over agreeableness.** If an approach is wrong, say so directly. Flag concerns rather than quietly working around them. Never present a guess with confidence — if you're unsure, say you're unsure.
 - **Wants short answers.** Be concise in every reply. Lead with the result, then anything they must act on, then caveats — briefly. No recaps of work they just watched, no restating a commit message in prose. Length is not thoroughness. This applies to chat only: code comments, commit messages and PR bodies stay as detailed as they need to be.
 
+## Keep them posted — every 15% of the token window
+
+They work from a phone and cannot scroll back through a terminal. A long
+stretch of silent work leaves them with no idea what happened or where things
+stand, which is the same problem as a fix reported without verification: the
+work may be fine, but they have no way to know it.
+
+So every time another **15% of the token window** goes by, before ending the
+turn, give a short plain-language summary:
+
+- **what you actually did** since the last one
+- **where that leaves the project**
+- **what the next step is**
+
+A few lines. Not a document, not a changelog — they can read the commits if
+they want detail. If nothing meaningful happened, say that instead of padding.
+
+**This is enforced, not trusted.** `node scripts/status-checkpoint.mjs`
+measures real spend from the session's own transcript; the `Stop` hook refuses
+to end a turn when a report is overdue. After giving the summary, run
+`node scripts/status-checkpoint.mjs --record` to clear it. Do not weaken or
+bypass that hook — the same rule written as a plain instruction is exactly
+what has failed twice before.
+
 ## Ask before assuming
 
 For any **game design or product decision** — mechanics, UI structure, scope, what a feature should do — ask a clarifying question rather than picking for them. This applies more strictly than normal.

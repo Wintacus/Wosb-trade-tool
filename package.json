@@ -12,9 +12,11 @@
     "test:watch": "vitest",
     "gen:sql": "node scripts/gen-sql.mjs && node scripts/gen-demo-sql.mjs && node scripts/gen-embedded-sql.mjs",
     "tokens": "node scripts/token-audit.mjs",
-    "verify": "node scripts/verify-ui.mjs"
+    "verify": "node scripts/verify-ui.mjs",
+    "ocr:accuracy": "node scripts/ocr-accuracy.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "@supabase/supabase-js": "^2.58.0",
     "pg": "^8.23.0",
     "react": "^19.2.0",
