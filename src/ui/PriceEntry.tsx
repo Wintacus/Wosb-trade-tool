@@ -45,7 +45,8 @@ export function PriceEntry({
   prices,
   now,
   thresholds,
-  initialPortId,
+  portId,
+  onPortChange,
   drafts,
   onDraftsChange,
   onClose,
@@ -59,7 +60,19 @@ export function PriceEntry({
   prices: readonly CurrentPrice[];
   now: number;
   thresholds?: FreshnessThresholds;
-  initialPortId: string | null;
+  /**
+   * Which port these prices are for. Owned by App, NOT held here.
+   *
+   * This used to be local state seeded from an `initialPortId` prop, while App
+   * keyed the drafts by its own separate copy. Two sources of truth for one
+   * fact, and all four of the following followed from it: typing was
+   * impossible when App's copy was null (every keystroke was dropped on the
+   * floor); "Change port" moved this copy but not App's, so prices typed at
+   * one port were saved to another WITH a success banner; and a reload
+   * relabelled them again. One value, one owner.
+   */
+  portId: string | null;
+  onPortChange: (portId: string | null) => void;
   /**
    * Prices typed but not yet saved, held by App so they survive a reload.
    * iOS discards backgrounded tabs, and this screen's whole purpose is being
@@ -71,7 +84,6 @@ export function PriceEntry({
   /** Called after a successful save so the rest of the app can refetch. */
   onSaved: (count: number) => void;
 }) {
-  const [portId, setPortId] = useState<string | null>(initialPortId);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Record<Section, boolean>>({ trade: true, craft: false });
   const [saving, setSaving] = useState(false);
@@ -101,10 +113,26 @@ export function PriceEntry({
   const tradeGoods = matches.filter((good) => good.isTradeGood);
   const craftGoods = matches.filter((good) => !good.isTradeGood);
 
-  const drafted = useMemo(
-    () => Object.values(drafts).filter((row) => row.buyText || row.sellText || row.stockText),
-    [drafts],
-  );
+  /**
+   * Rows with something actually typed in them.
+   *
+   * Filtered to goods that still exist: drafts outlive a deploy, goods are
+   * database rows in a game that is actively patched, and a draft for a good
+   * that has since gone away made validateRows report an error against a row
+   * that is not on screen — blocking EVERY save with nothing to correct, and
+   * no way out but discarding all the typed work.
+   *
+   * `.trim()` matters too: a stray space is truthy, so it counted as an edit,
+   * enabled Save, and then produced no rows — a live button that did nothing.
+   */
+  const drafted = useMemo(() => {
+    const known = new Set(goods.map((good) => good.id));
+    return Object.values(drafts).filter(
+      (row) =>
+        known.has(row.goodId) &&
+        (row.buyText.trim() || row.sellText.trim() || row.stockText.trim()),
+    );
+  }, [drafts, goods]);
 
   const problemFor = (goodId: string, field: FieldProblem['field']) =>
     problems.find((p) => p.goodId === goodId && p.field === field)?.message ?? null;
@@ -159,7 +187,7 @@ export function PriceEntry({
           observations={observations}
           shipRate={null}
           otherPortId={null}
-          onPick={(picked) => setPortId(picked.id)}
+          onPick={(picked) => onPortChange(picked.id)}
           now={now}
           thresholds={thresholds}
           stepLabel="Choosing where you are"
@@ -180,7 +208,7 @@ export function PriceEntry({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setPortId(null)}>Change port</Button>
+          <Button onClick={() => onPortChange(null)}>Change port</Button>
           <Button variant="ghost" onClick={onClose}>
             Done
           </Button>

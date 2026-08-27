@@ -38,7 +38,8 @@ function render(initialPortId: string | null, prices = [makePrice('fiji', 'sugar
       goods={goods}
       prices={prices}
       now={Date.now()}
-      initialPortId={initialPortId}
+      portId={initialPortId}
+      onPortChange={() => {}}
       drafts={{}}
       onDraftsChange={() => {}}
       onClose={() => {}}
@@ -117,7 +118,8 @@ describe('the entry screen renders', () => {
         goods={[makeGood('copper', 10, { name: 'Copper', isTradeGood: false })]}
         prices={[]}
         now={Date.now()}
-        initialPortId="fiji"
+        portId="fiji"
+        onPortChange={() => {}}
         drafts={{}}
         onDraftsChange={() => {}}
         onClose={() => {}}

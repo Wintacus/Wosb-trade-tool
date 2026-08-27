@@ -49,6 +49,15 @@ export interface SessionDraft {
 }
 
 export interface SessionState {
+  /**
+   * Which server this work belongs to.
+   *
+   * Without it a session saved on North America restored identically onto
+   * Europe, and prices read off one economy were saved into the other with a
+   * success banner. "Servers are separate economies... mixing NA and EU data
+   * produces garbage" — so the stamp is what makes that detectable at all.
+   */
+  serverId: string | null;
   step: SessionStep;
   originId: string | null;
   destinationId: string | null;
@@ -62,6 +71,7 @@ export interface SessionState {
 }
 
 export const EMPTY_SESSION: SessionState = {
+  serverId: null,
   step: 'origin',
   originId: null,
   destinationId: null,
@@ -155,6 +165,7 @@ export function parseSession(raw: string | null, now = Date.now()): SessionState
     }
 
     return {
+      serverId: asString(row.serverId),
       step,
       originId: asString(row.originId),
       destinationId: asString(row.destinationId),
@@ -171,6 +182,23 @@ export function parseSession(raw: string | null, now = Date.now()): SessionState
 
 export function loadSession(now = Date.now()): SessionState {
   return parseSession(storage()?.getItem(STORAGE_KEY) ?? null, now);
+}
+
+/**
+ * The session, but only if it belongs to the server now selected.
+ *
+ * A route and a sheet full of typed prices are meaningless — worse, actively
+ * misleading — against a different economy. Restoring them onto the wrong
+ * server is how a price read on North America ended up saved as Europe's.
+ * A session with no stamp at all predates this and is not trusted either.
+ */
+export function loadSessionForServer(
+  serverId: string | null,
+  now = Date.now(),
+): SessionState {
+  const session = loadSession(now);
+  if (!serverId || session.serverId !== serverId) return EMPTY_SESSION;
+  return session;
 }
 
 export function saveSession(state: Omit<SessionState, 'savedAt'>, now = Date.now()): void {
