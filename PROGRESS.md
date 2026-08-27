@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-27 — Phase 3: manual entry + screenshot OCR built (session 4).
+Last updated: 2026-08-27 — Phase 3 complete and MERGED to main (PR #9), session 4.
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -236,20 +236,42 @@ about it is verified.
   rather than copying them. No fixtures and no key yet, so it currently reports
   "nothing measured" and exits 0.
 
+## The Vercel connector changed what a session can check itself
+
+Connect **Vercel** under Settings → Connectors on claude.ai. Its tools route
+through the MCP proxy rather than raw network, so they work from the sandbox
+even though `curl` to `*.vercel.app` does not. Measured 2026-08-27:
+
+- `list_deployments` / `get_deployment_build_logs` / `get_runtime_logs` — build
+  and runtime truth without asking anyone to read a dashboard.
+- `web_fetch_vercel_url` **reaches production** (`wosb-trade-tool.vercel.app`).
+- It does **not** reach preview URLs: this project has Vercel Authentication on
+  preview deployments, so every preview link 302s to an SSO login. That is a
+  project setting, not a bug — the user's own browser is signed in, so previews
+  work for them. `get_access_to_vercel_url` mints a 23-hour bypass link, but the
+  fetch tool does not follow its cookie redirect.
+- There is **no env-var tool.** `GET /api/ocr` on production is how a session
+  answers "is the key set" — which is why merging to main mattered.
+
+Raw egress from the sandbox is a tight allowlist: `platform.claude.com`,
+`registry.npmjs.org`, `api.anthropic.com`, github via the git proxy. Everything
+else — `api.vercel.com`, `api.supabase.com`, `anthropic.com`, `google.com` —
+is refused at CONNECT. Do not waste calls rediscovering this.
+
 ## Blocked / needs the user
 
 - **A real screenshot of the Market tab.** SPEC 7.2 says the layouts were
   "confirmed from real screenshots", but none are in the repo, so the prompt was
-  written against a described layout rather than a seen one. One screenshot
-  dropped into the chat becomes `fixtures/ocr/` and makes accuracy measurable.
-  Until then, nobody knows how well this reads.
-- **`ANTHROPIC_API_KEY` in Vercel.** Not confirmed set. This session could not
-  check: the sandbox's egress proxy blocks `*.vercel.app`, so the deployed site
-  is unreachable from here. The app answers it instead — Diagnostics shows
-  "Screenshot reading: ready" or names the missing variable.
-  Set it at https://vercel.com/wintacus1/wosb-trade-tool/settings/environment-variables
+  written against a described layout rather than a seen one. Pasting one into
+  the chat is enough — Claude reads images directly — and it becomes
+  `fixtures/ocr/` plus a hand-written `.expected.json`. Until then nobody knows
+  how well this reads.
+- **`ANTHROPIC_API_KEY` in Vercel.** Check it from any session with
+  `web_fetch_vercel_url` on `https://wosb-trade-tool.vercel.app/api/ocr`, which
+  reports `ready` or names what is missing. If missing, set it at
+  https://vercel.com/wintacus1/wosb-trade-tool/settings/environment-variables
   (key from https://console.anthropic.com/settings/keys, spend cap at
-  https://console.anthropic.com/settings/limits), then redeploy: Vercel applies
+  https://console.anthropic.com/settings/limits), then redeploy — Vercel applies
   variables only to new deployments.
 
 ## Next
