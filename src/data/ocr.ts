@@ -142,6 +142,35 @@ async function toBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
+export interface Readiness {
+  ready: boolean;
+  missing: string[];
+}
+
+/**
+ * Whether this deployment can read screenshots at all.
+ *
+ * The answer depends on a server-side key, so it has to be asked for; it is
+ * asked once per page load and shared, because the answer cannot change while
+ * the page is open. An unreachable probe is deliberately NOT treated as "off":
+ * a momentary blip must not hide a working feature, and a real failure will
+ * explain itself properly when someone uploads.
+ */
+let readinessProbe: Promise<Readiness> | null = null;
+
+export function ocrReadiness(): Promise<Readiness> {
+  readinessProbe ??= fetch('/api/ocr', { method: 'GET' })
+    .then(async (response) => {
+      if (!response.ok) return { ready: true, missing: [] };
+      const body = (await response.json()) as Partial<Readiness>;
+      return body.ready === false
+        ? { ready: false, missing: body.missing ?? [] }
+        : { ready: true, missing: [] };
+    })
+    .catch(() => ({ ready: true, missing: [] }));
+  return readinessProbe;
+}
+
 /** Send the image to be read. Resolves with what was found; throws with why not. */
 export async function readScreenshot(file: File): Promise<Extraction> {
   const image = await prepareImage(file);

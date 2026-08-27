@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-26 — Phase 3 manual entry built (session 3). OCR deferred by decision.
+Last updated: 2026-08-27 — Phase 3: manual entry + screenshot OCR built (session 4).
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -178,7 +178,7 @@ Run `npm run tokens` before this session ends and add its row above.
 Branch `claude/phase-3-kickoff-37dj1t`, from a **merged** `main` — PR #6 was merged
 2026-08-26, so `main` is now the product UI, not the status page.
 
-**421 tests passing** (390 from Phase 2).
+**509 tests passing** (390 from Phase 2), plus 15/15 browser checks in `npm run verify`.
 
 - `api/anon-session.ts` mints the invisible contributor account. The database
   refuses a submission from a signed-out visitor (`for insert to authenticated
@@ -199,6 +199,58 @@ Branch `claude/phase-3-kickoff-37dj1t`, from a **merged** `main` — PR #6 was m
 **Fields deliberately start empty.** Pre-filling turns Save into re-affirming
 sixty numbers nobody looked at, with a fresh timestamp — laundering a stale
 price into a fresh-looking one. The recorded value sits beside the field.
+
+## Done — Phase 3 OCR (SPEC 7.2)
+
+Screenshot reading is built, tested and deployed. **Whether it reads a real game
+screenshot accurately is still unmeasured** — see "Blocked" below. Everything else
+about it is verified.
+
+- `api/ocr.ts` — the whole server side. Holds `ANTHROPIC_API_KEY`, calls
+  `claude-opus-5` with the image, and returns rows for review. **It cannot write
+  to the database.** That is how "always show the review screen" is guaranteed:
+  there is no second path to the data, so it cannot be forgotten.
+- `src/ui/OcrCapture.tsx` sits at the top of the existing entry sheet and fills
+  the same boxes a person types into, marked "read". The existing Save button is
+  still the only thing that commits. `GET /api/ocr` reports whether the key is
+  configured, so the panel says "switched off" instead of failing on upload, and
+  the Diagnostics page shows the same line.
+- `src/data/ocr.ts` — resizes to 1568px and re-encodes through a canvas (which is
+  what strips EXIF, and what converts iPhone HEIC), then merges the result.
+  `applyExtraction` **never overwrites a value a person typed**; a field they
+  correct stops counting as machine-read, which is what makes the correction log
+  mean anything.
+- `migrations/0003_ocr_usage.sql` — `ocr_charge()` counts per account in Postgres,
+  atomically. An in-memory counter like the one in `anon-session.ts` is defeated
+  by retrying until a cold instance answers, and every request here spends money.
+  30/hour, 150/day. A refused request still counts. The endpoint **fails closed**
+  if the counter is unreachable.
+- Everything the model returns is checked before anyone sees it: `good_id` is an
+  enum of ids we actually have, prices are returned as strings (a JSON number
+  would put money in a float), anything unparseable is dropped with a reason and
+  **never repaired**, duplicates and out-of-band values are flagged. The prompt
+  tells the model to transcribe any text that reads like an instruction rather
+  than follow it.
+- `npm run ocr:accuracy` measures real accuracy against `fixtures/ocr/*` — image
+  plus a hand-written `.expected.json`. It imports the live prompt and validation
+  rather than copying them. No fixtures and no key yet, so it currently reports
+  "nothing measured" and exits 0.
+
+## Blocked / needs the user
+
+- **A real screenshot of the Market tab.** SPEC 7.2 says the layouts were
+  "confirmed from real screenshots", but none are in the repo, so the prompt was
+  written against a described layout rather than a seen one. One screenshot
+  dropped into the chat becomes `fixtures/ocr/` and makes accuracy measurable.
+  Until then, nobody knows how well this reads.
+- **`ANTHROPIC_API_KEY` in Vercel.** Not confirmed set. This session could not
+  check: the sandbox's egress proxy blocks `*.vercel.app`, so the deployed site
+  is unreachable from here. The app answers it instead — Diagnostics shows
+  "Screenshot reading: ready" or names the missing variable.
+  Set it at https://vercel.com/wintacus1/wosb-trade-tool/settings/environment-variables
+  (key from https://console.anthropic.com/settings/keys, spend cap at
+  https://console.anthropic.com/settings/limits), then redeploy: Vercel applies
+  variables only to new deployments.
 
 ## Next
 

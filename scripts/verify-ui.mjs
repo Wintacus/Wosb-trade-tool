@@ -112,7 +112,12 @@ const TABLES = {
   })(),
 };
 
+// detached so the whole process group can be signalled at the end. Without
+// it, SIGTERM reaches `npx` and the real vite process is orphaned to init,
+// still holding the port -- and the next run dies with a bare "Vite did not
+// start" that says nothing about why. That cost three runs to work out once.
 const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
+  detached: true,
   env: {
     ...process.env,
     VITE_SUPABASE_URL: 'https://verify.invalid',
@@ -122,16 +127,28 @@ const vite = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
 });
 
 let ready = false;
+// Kept so a failure to start can say WHY. It used to report only "Vite did not
+// start", which is true and useless -- the actual message ("Port 5199 is
+// already in use") was being thrown away.
+let viteLog = '';
 vite.stdout.on('data', (d) => {
   const s = d.toString();
+  viteLog += s;
   if (s.includes('ready in') || s.includes('Local:')) ready = true;
+});
+vite.stderr.on('data', (d) => {
+  viteLog += d.toString();
 });
 
 const started = Date.now();
 while (!ready) {
   if (Date.now() - started > 40_000) {
-    console.error('Vite did not start.');
-    vite.kill('SIGTERM');
+    console.error(`Vite did not start. Last output:\n${viteLog.slice(-1200)}`);
+    try {
+      process.kill(-vite.pid, 'SIGTERM');
+    } catch {
+      vite.kill('SIGTERM');
+    }
     process.exit(1);
   }
   await new Promise((r) => setTimeout(r, 100));
@@ -594,7 +611,17 @@ try {
   fail('the run completed', error.message);
 } finally {
   await browser.close().catch(() => {});
-  vite.kill('SIGTERM');
+  stopVite();
+}
+
+function stopVite() {
+  try {
+    // Negative pid = the whole group, which is what actually reaches the vite
+    // process behind npx.
+    process.kill(-vite.pid, 'SIGTERM');
+  } catch {
+    vite.kill('SIGTERM');
+  }
 }
 
 // ---------------------------------------------------------------------

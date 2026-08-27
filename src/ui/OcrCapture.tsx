@@ -1,5 +1,12 @@
-import { useRef, useState } from 'react';
-import { ACCEPTED_TYPES, readScreenshot, type Extraction, type MergeResult } from '../data/ocr';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ACCEPTED_TYPES,
+  ocrReadiness,
+  readScreenshot,
+  type Extraction,
+  type MergeResult,
+  type Readiness,
+} from '../data/ocr';
 import { Button, ErrorNote } from './Ui';
 
 /**
@@ -29,6 +36,19 @@ export function OcrCapture({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ extraction: Extraction; merge: MergeResult } | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+
+  // Asked once, so nobody is invited to upload into a feature that is switched
+  // off and then handed an error for their trouble.
+  useEffect(() => {
+    let cancelled = false;
+    void ocrReadiness().then((value) => {
+      if (!cancelled) setReadiness(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function pick(file: File | null) {
     if (!file) return;
@@ -69,13 +89,26 @@ export function OcrCapture({
             Fills the boxes below. Nothing is saved until you check it and press Save.
           </p>
         </div>
-        <Button
-          onClick={() => input.current?.click()}
-          disabled={disabled || busy !== null}
-        >
-          {busy ? 'Reading…' : 'Choose screenshot'}
-        </Button>
+        {readiness && !readiness.ready ? (
+          <p className="text-xs text-slate-500">Switched off on this deployment</p>
+        ) : (
+          <Button
+            onClick={() => input.current?.click()}
+            disabled={disabled || busy !== null}
+          >
+            {busy ? 'Reading…' : 'Choose screenshot'}
+          </Button>
+        )}
       </div>
+
+      {readiness && !readiness.ready ? (
+        <p className="mt-2 text-xs text-slate-500">
+          {readiness.missing.length > 0
+            ? `${readiness.missing.join(' and ')} is not set for this deployment, so screenshots cannot be read. `
+            : 'Screenshot reading is not configured on this deployment. '}
+          Everything below still works — type in what you can see.
+        </p>
+      ) : null}
 
       <input
         ref={input}
