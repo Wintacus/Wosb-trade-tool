@@ -329,6 +329,24 @@ try {
   };
 
   /**
+   * Re-install the probe if the page navigated out from under us.
+   *
+   * This dev server's file watcher covers the whole repo, so any save
+   * anywhere — even in an unrelated file this script never touches —
+   * triggers Vite HMR, and a change it cannot hot-apply forces a full page
+   * reload. That reload wipes `window.__probe` between one call and the
+   * next, which surfaced as a hard crash ("Cannot destructure property
+   * 'projectPorts' of 'window.__probe'") when this script ran alongside
+   * another process editing files in the same working tree. Production has
+   * no HMR and no watcher, so this is a test-harness-only condition — but
+   * readMap is called dozens of times per run, so it must tolerate it.
+   */
+  const ensureProbe = async () => {
+    const ok = await page.evaluate(() => Boolean(window.__probe)).catch(() => false);
+    if (!ok) await installProbe();
+  };
+
+  /**
    * The map's state, recovered from what is actually drawn.
    *
    * scale and offset live in React state and are exposed nowhere, so they
@@ -338,7 +356,23 @@ try {
    * follows from it — including ports currently hidden inside a cluster,
    * which is the whole reason for doing it this way.
    */
-  const readMap = () =>
+  const readMap = async () => {
+    // Retried rather than called once: the same unrelated-file-save reload
+    // that can wipe window.__probe between ensureProbe() and this evaluate
+    // can also land here mid-evaluate, briefly leaving no <svg> in the DOM
+    // while the page re-mounts. Three attempts with a short wait absorbs
+    // that without weakening what the check itself asserts.
+    for (let attempt = 1; ; attempt += 1) {
+      await ensureProbe();
+      try {
+        return await readMapOnce();
+      } catch (error) {
+        if (attempt >= 3) throw error;
+        await page.waitForTimeout(200);
+      }
+    }
+  };
+  const readMapOnce = () =>
     page.evaluate(() => {
       const { projectPorts, portLabel, ports } = window.__probe;
       const svg = document.querySelector('svg');
@@ -514,6 +548,67 @@ try {
       `every extreme port can be panned into view at scale ${wanted}`,
       unreachable.length === 0,
       unreachable.length === 0 ? `measured scale ${achieved?.toFixed(2)}` : unreachable.join('; '),
+    );
+  }
+
+  // --- A PORT AT THE CLAMP LIMIT IS NEVER PERMANENTLY HALF-CLIPPED ---
+  //
+  // A user reported (2026-08-26) that zooming in and panning "cuts off some
+  // of the ports". Root cause: clampAxis let a port's own coordinate reach
+  // exactly x=0 or x=viewBox width — which is also the clamp's hard stop —
+  // so the marker's constant-radius dot drew half outside the viewBox with
+  // no further pan able to fix it. The previous "reachable into view" checks
+  // above only assert the port's raw coordinate lands in [0, width]; they
+  // never look at the drawn marker, which has real width. Fixed by
+  // EDGE_MARGIN in PortMap.tsx: the clamp now always stops that many screen
+  // pixels short of the true edge. This check draws the map, pans each axis
+  // to its genuine limit (repeating until the offset stops moving, the same
+  // proof used elsewhere in this file), and looks at the actual rendered
+  // circle of the port that defines that edge.
+  await freshMap();
+  {
+    const box = await mapArea();
+    await zoomBy(3, box); // scale 8: guarantees every port is its own
+    // marker (see "no cluster survives at max zoom"), so the boundary port
+    // is never hidden inside a cluster's differently-sized circle.
+    const MARKER_RADIUS = 9; // mirrors PortMap.tsx's visible-dot radius.
+    const EDGE_MARGIN = 22; // mirrors PortMap.tsx's EDGE_MARGIN (= HIT_RADIUS).
+    const stillClipped = [];
+    for (const [dx, dy, which] of [
+      [-240, 0, 'rightmost'],
+      [240, 0, 'leftmost'],
+      [0, -360, 'bottommost'],
+      [0, 360, 'topmost'],
+    ]) {
+      const settled = await panToLimit(dx, dy, box);
+      const target = extremesOf(settled)[which];
+      const marker = settled.markers.find((m) => !m.cluster && m.name === target.name);
+      if (!marker) {
+        stillClipped.push(`${which} ${target.name} was inside a cluster, not its own marker`);
+        continue;
+      }
+      const r = MARKER_RADIUS;
+      // Judge only the axis this pass actually panned. A pure-horizontal
+      // drag never touches the vertical offset, so an extreme port whose Y
+      // simply isn't in view yet is not this bug — it is an unrelated axis
+      // this pass was not driving toward its limit.
+      const clipped =
+        dx !== 0
+          ? marker.x - r < -0.5 || marker.x + r > settled.W + 0.5
+          : marker.y - r < -0.5 || marker.y + r > settled.H + 0.5;
+      if (clipped) {
+        stillClipped.push(
+          `${which} ${target.name} at (${Math.round(marker.x)},${Math.round(marker.y)}) in ${Math.round(settled.W)}x${Math.round(settled.H)}, panning further this way changes nothing`,
+        );
+        await shoot(`marker-clipped-at-limit-${which}`);
+      }
+    }
+    check(
+      'a port at the pan limit keeps its whole marker inside the viewBox',
+      stillClipped.length === 0,
+      stillClipped.length === 0
+        ? `all four extremes fully visible at their clamp limit (${EDGE_MARGIN}px edge margin)`
+        : stillClipped.join('; '),
     );
   }
 
@@ -848,7 +943,9 @@ try {
   //
   // Anyone who cannot pinch, or whose device leaks the gesture to the OS,
   // uses these three buttons. They must stay reachable, stay 44px, and
-  // still work at the extremes of zoom.
+  // still work at the extremes of zoom. Reset lives in the header now (it is
+  // rare, and it was holding prime bottom-right space over the map); +/-
+  // stay on the map because they are the gesture-free path.
   await freshMap();
   {
     const box = await mapArea();
@@ -892,6 +989,45 @@ try {
     );
   }
 
+  // --- THE ZOOM CONTROLS GET OUT OF THE WAY -----------------------------
+  //
+  // They are pinned to a fixed screen corner and do not move with the map, so
+  // whatever pans underneath them is hidden — measured at the fitted view they
+  // cover a 48x148px block of a 406x580px map and sit on top of Port Bord
+  // Radel. They fade while a finger is down, which is exactly when the user is
+  // dragging something into view. They must come BACK when the finger lifts,
+  // and must not swallow a tap while faded.
+  await freshMap();
+  {
+    const box = await mapArea();
+    const opacityNow = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('button[aria-label="Zoom in"]').parentElement;
+        return { opacity: Number(getComputedStyle(el).opacity), events: getComputedStyle(el).pointerEvents };
+      });
+
+    const atRest = await opacityNow();
+    // Press and hold mid-drag, sampling before releasing.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 60, { steps: 6 });
+    await page.waitForTimeout(320);
+    const during = await opacityNow();
+    await page.mouse.up();
+    await page.waitForTimeout(420);
+    const after = await opacityNow();
+
+    check(
+      'the zoom controls fade while dragging and come back after',
+      atRest.opacity > 0.9 &&
+        during.opacity < 0.5 &&
+        during.events === 'none' &&
+        after.opacity > 0.9 &&
+        after.events !== 'none',
+      `at rest ${atRest.opacity.toFixed(2)}, during drag ${during.opacity.toFixed(2)} (${during.events}), after ${after.opacity.toFixed(2)} (${after.events})`,
+    );
+  }
+
   // --- PANNING INTO NOTHING ---------------------------------------------
   //
   // The clamp is drawn around the VIEWPORT, not around the ports. The
@@ -922,6 +1058,62 @@ try {
       'panning never leaves a screen with no ports on it',
       worst.count > 0,
       `${worst.where} at scale 4 shows ${worst.count} of 42 ports`,
+    );
+  }
+
+  // --- AN EDGE PORT CAN BE BROUGHT TO THE MIDDLE OF THE SCREEN ----------
+  //
+  // Reported by the user on 2026-08-26, after the EDGE_MARGIN fix above had
+  // already shipped: "the map just stops abruptly, you can't scroll further
+  // left, right, up, or down and it leaves these ports just so close to the
+  // edge and they start to get cut off... give us a little more room so we
+  // can center those edge ports better."
+  //
+  // They were right, and the checks above could not see it. Every earlier
+  // reachability check asks only whether an extreme port is ON SCREEN. It
+  // was -- pinned EDGE_MARGIN px from the edge, which is on screen and
+  // useless: the label runs off, the marker sits under the zoom controls,
+  // and there is no pan left to fix it because that IS the clamp's limit.
+  //
+  // "On screen" was the wrong bar. The real requirement is that any port can
+  // be brought somewhere near the middle, where it can actually be read and
+  // tapped. This asserts that directly.
+  for (const wanted of [2, 4]) {
+    const stuck = [];
+    for (const which of ['leftmost', 'rightmost', 'topmost', 'bottommost']) {
+      await freshMap();
+      const box = await mapArea();
+      const zoomed = await zoomBy(Math.log2(wanted), box);
+      const target = extremesOf(zoomed)[which];
+      // panToLimit, NOT panToward: panToward returns the moment the port is
+      // merely on screen, which is precisely the inadequate bar this check
+      // exists to replace. The question here is how far the map can actually
+      // go, so drag the same way until the clamp refuses to move it.
+      const horizontal = which === 'leftmost' || which === 'rightmost';
+      const towards =
+        which === 'leftmost' ? [240, 0]
+        : which === 'rightmost' ? [-240, 0]
+        : which === 'topmost' ? [0, 360]
+        : [0, -360];
+      const settled = await panToLimit(towards[0], towards[1], box);
+      const port = settled.positions.find((p) => p.name === target.name);
+      const centre = horizontal ? settled.W / 2 : settled.H / 2;
+      const got = horizontal ? port.x : port.y;
+      const offBy = Math.abs(got - centre);
+      // Within a quarter of the screen of dead centre counts as centred:
+      // comfortably clear of the edge, the labels and the zoom controls.
+      const allowed = (horizontal ? settled.W : settled.H) / 4;
+      if (offBy > allowed) {
+        stuck.push(
+          `${which} ${target.name} stops ${Math.round(offBy)}px from centre (allowed ${Math.round(allowed)})`,
+        );
+        await shoot(`stuck-at-edge-scale${wanted}-${which}`);
+      }
+    }
+    check(
+      `an edge port can be panned near the middle of the screen at scale ${wanted}`,
+      stuck.length === 0,
+      stuck.length === 0 ? 'all four extremes reach the middle' : stuck.join('; '),
     );
   }
 

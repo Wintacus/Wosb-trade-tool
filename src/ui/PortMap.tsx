@@ -78,6 +78,13 @@ const HIT_RADIUS = 22;
  * than a tap target, so two markers never sit close enough to be ambiguous.
  */
 const CLUSTER_SEPARATION = 46;
+/**
+ * Screen pixels the pan clamp always leaves between a port at the content's
+ * true edge and the SVG viewBox boundary. Equal to HIT_RADIUS so that when
+ * the map is panned as far as it goes, the boundary-most port is not just
+ * visible but still fully within its own 44px tap target — see clampAxis.
+ */
+const EDGE_MARGIN = HIT_RADIUS;
 /** Two taps closer together than this, in milliseconds, count as a double tap. */
 const DOUBLE_TAP_MS = 300;
 /** ...and no further apart than this, in screen pixels. */
@@ -95,36 +102,106 @@ const LABEL_EDGE_PAD = 60;
 const FALLBACK_SIZE = { width: 360, height: 480 };
 
 /**
- * Clamp one axis so the map never shows a gap at the edge.
+ * Clamp one axis so the map never shows a gap at the edge — and never pins a
+ * port's own marker exactly on the edge either, with no further pan able to
+ * free it. `margin` is a constant number of SCREEN pixels (not content
+ * pixels) reserved on both ends of `viewport`, so the clamp always stops
+ * `margin` px short of the true edge rather than flush with it.
+ *
+ * That margin is the fix for a bug reported from a real phone (2026-08-26):
+ * zooming in and panning toward an edge left a port's marker permanently cut
+ * in half, because the previous clamp let a port's own coordinate reach
+ * exactly x=0 or x=viewport — the pixel where the map STOPS. A marker has a
+ * constant on-screen radius at every zoom (by design, see the file header),
+ * so a coordinate sitting exactly on the boundary always draws half the dot
+ * outside the SVG's viewBox, which clips it — and because that boundary is
+ * also the clamp's own limit, there is no further pan that can fix it. Every
+ * previous touch-test check only asserted the port's raw coordinate was
+ * within [0, viewport]; none rendered the marker itself, so this shipped
+ * unnoticed through 28/28 passing checks. See EDGE_MARGIN below.
  *
  *  - When the content is LARGER than the viewport, the viewport must stay
- *    inside it: pan until an edge meets an edge and no further. Letting it go
- *    further is what put the user on a screen of blank sea at 4x with nothing
- *    to navigate by.
+ *    inside it: pan until an edge meets an edge (plus the margin) and no
+ *    further. Letting it go further is what put the user on a screen of
+ *    blank sea at 4x with nothing to navigate by.
  *  - When the content is SMALLER, there is nothing to pan through, so it is
- *    locked centred. Without this the map could be dragged sideways at 1x and
- *    simply stay there, stranding 31 of the 42 ports off screen with no
- *    spring-back — this map has no inertia or animation to bring them home.
+ *    locked centred (within the same margin-narrowed slack). Without this
+ *    the map could be dragged sideways at 1x and simply stay there,
+ *    stranding 31 of the 42 ports off screen with no spring-back — this map
+ *    has no inertia or animation to bring them home.
  */
+/**
+ * How much of the extra pan room applies, from 0 at the fitted view to 1 once
+ * zoomed to 2x or beyond.
+ *
+ * Driven by the zoom the user actually chose, NOT by how the content's span
+ * compares to the screen. Span was tried first and is subtly wrong: the map is
+ * letterboxed, so one axis has slack at the fitted view and the other does
+ * not, and the same zoom therefore produced different freedom per axis — the
+ * vertical axis came up 24px short of centring at 2x while the horizontal was
+ * fine. Zoom is the thing the user is aware of, and it treats both axes alike.
+ */
+function panFreedom(scale: number): number {
+  return Math.min(1, Math.max(0, scale - 1));
+}
+
 function clampAxis(
   offset: number,
   contentMin: number,
   contentMax: number,
   viewport: number,
+  margin: number,
+  freedom: number,
 ): number {
+  const lo = margin;
+  const hi = viewport - margin;
   const span = contentMax - contentMin;
-  if (span <= viewport) {
-    // Smaller than the screen: it may slide within the slack, but never far
-    // enough for any of it to leave. Locking it dead centre instead was worse
-    // than it sounds — a locked axis silently overrides the pinch anchor, and
-    // the port under the fingers drifted 53px because it could not follow
-    // them vertically.
-    return Math.max(-contentMin, Math.min(viewport - contentMax, offset));
-  }
-  // Larger than the screen: the screen must stay inside it, so panning stops
-  // when an edge meets an edge. Going further shows blank sea with nothing to
-  // navigate by.
-  return Math.max(viewport - contentMax, Math.min(-contentMin, offset));
+
+  // The limits at the fitted view, where the map should still sit still.
+  //
+  //  - Content SMALLER than the screen: it may slide within the slack but
+  //    never far enough for any of it to leave. Locking it dead centre
+  //    instead was worse than it sounds — a locked axis silently overrides
+  //    the pinch anchor, and the port under the fingers drifted 53px because
+  //    it could not follow them vertically.
+  //  - Content LARGER: the screen stays inside it, so panning stops when an
+  //    edge meets an edge. Going further showed blank sea at 4x with nothing
+  //    to navigate by.
+  const fits = span <= hi - lo;
+  const restingLower = fits ? lo - contentMin : hi - contentMax;
+  const restingUpper = fits ? hi - contentMax : lo - contentMin;
+
+  // The limits once zoomed in, where either outermost port can be brought to
+  // the MIDDLE of the screen instead of being pinned near its edge.
+  //
+  // Edge-meets-edge was the obvious rule and it was wrong in use: it stops the
+  // outermost port a couple of dozen pixels from the edge and stops dead — on
+  // screen, technically, but with its label running off, its marker under the
+  // zoom controls, and no pan left to improve it, because that position IS the
+  // limit. Reported as "it stops abruptly... it leaves these ports so close to
+  // the edge and they start to get cut off". Every earlier check missed it
+  // because they all asked whether a port was *on screen* rather than whether
+  // it could be brought somewhere usable.
+  //
+  // This applies to BOTH cases above, which the first attempt at this fix got
+  // wrong: it loosened only the larger-than-screen case, and the map is
+  // letterboxed — on a tall phone the ports span far less height than width,
+  // so the vertical axis is still "smaller than the screen" even at 2x and
+  // stayed stuck 195px short of centre.
+  const centre = viewport / 2;
+  const centredLower = centre - contentMax;
+  const centredUpper = centre - contentMin;
+
+  // `freedom` (0..1) phases that room in with zoom — see panFreedom. Granting
+  // it at the fitted view lets the whole map be shoved off into empty sea for
+  // no reason, which a test caught immediately.
+  //
+  // The cost is a screenful of empty sea at the very limit. That is a fair
+  // trade for every port being readable and tappable, and there is always at
+  // least one port in view: the one just centred.
+  const lower = restingLower + (centredLower - restingLower) * freedom;
+  const upper = restingUpper + (centredUpper - restingUpper) * freedom;
+  return Math.max(lower, Math.min(upper, offset));
 }
 
 interface Pointer {
@@ -162,6 +239,17 @@ export function PortMap({
   const [size, setSize] = useState(FALLBACK_SIZE);
 
   const pointers = useRef(new Map<number, Pointer>());
+  /**
+   * True while at least one finger is on the map.
+   *
+   * Drives the zoom controls fading out of the way. They are pinned to a fixed
+   * screen corner and do not move with the map, so whatever pans underneath
+   * them is hidden — measured at the fitted view, they cover a 48x148px block
+   * of a 406x580px map (3%) and sit on top of Port Bord Radel. Fading them
+   * while the map is actually moving is when it matters, because that is
+   * exactly when the user is looking for something underneath.
+   */
+  const [touching, setTouching] = useState(false);
   const pinchDistance = useRef<number | null>(null);
   const dragged = useRef(false);
   /** The wrapper the native, non-passive listeners are attached to. */
@@ -290,9 +378,10 @@ export function PortMap({
    */
   function clampOffset(next: { x: number; y: number }, atScale: number) {
     const { minX, minY, maxX, maxY } = contentBounds;
+    const freedom = panFreedom(atScale);
     return {
-      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width),
-      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height),
+      x: clampAxis(next.x, minX * atScale, maxX * atScale, size.width, EDGE_MARGIN, freedom),
+      y: clampAxis(next.y, minY * atScale, maxY * atScale, size.height, EDGE_MARGIN, freedom),
     };
   }
 
@@ -444,6 +533,7 @@ export function PortMap({
       // altogether and only a reload fixes it. The touch list is the
       // authority on what is actually down.
       pointers.current.clear();
+      setTouching(false);
       pinchDistance.current = null;
       pinchStart.current = null;
     };
@@ -535,6 +625,7 @@ export function PortMap({
       x: event.clientX,
       y: event.clientY,
     });
+    setTouching(true);
     dragged.current = false;
   }
 
@@ -606,6 +697,7 @@ export function PortMap({
   function onPointerUp(event: React.PointerEvent<SVGSVGElement>) {
     const wasDragged = dragged.current;
     pointers.current.delete(event.pointerId);
+    if (pointers.current.size === 0) setTouching(false);
     if (pointers.current.size < 2) {
       pinchDistance.current = null;
       // Drop the pinch anchor so the finger still down resumes a clean pan,
@@ -666,18 +758,29 @@ export function PortMap({
       className="fixed inset-0 z-50 flex flex-col bg-slate-950"
       style={{ height: "100dvh" }}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-slate-100">
-            {stepLabel}
-          </h2>
-          <p className="text-xs text-slate-500">
-            Tap a port, then confirm. {ports.length} ports.
-          </p>
+      {/*
+        One line, not two: "tap a port, then confirm" only restates what the
+        footer's own confirm button already makes obvious. Every removed line
+        here is height the map canvas gets back — this header plus the footer
+        below it were together eating a quarter of a 430x740 phone screen.
+      */}
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <h2 className="min-w-0 truncate text-base font-semibold text-slate-100">
+          {stepLabel} <span className="font-normal text-slate-500">· {ports.length} ports</span>
+        </h2>
+        <div className="flex shrink-0 items-center gap-2">
+          {/*
+            Reset lives up here rather than on the map. It is a rare action
+            and it was holding a 44px block of prime bottom-right space, on
+            top of the map, for something used once in a session.
+          */}
+          <Button onClick={reset} ariaLabel="Reset the view" className="w-12 px-0">
+            ⟲
+          </Button>
+          <Button onClick={onClose} ariaLabel="Close the map">
+            ✕
+          </Button>
         </div>
-        <Button onClick={onClose} ariaLabel="Close the map">
-          ✕
-        </Button>
       </header>
 
       {/*
@@ -832,9 +935,23 @@ export function PortMap({
           })}
         </svg>
 
-        {/* Zoom controls sit bottom-right, inside thumb reach, and are the
-            path that needs no gesture at all. */}
-        <div className="absolute right-3 bottom-3 flex flex-col gap-2">
+        {/*
+          Zoom controls sit bottom-right, inside thumb reach, and are the path
+          that needs no gesture at all — which is why they stay on the map and
+          are never removed: anyone who cannot pinch has only these.
+
+          They are pinned to the screen and do not move with the map, so
+          whatever pans underneath is hidden. They fade while a finger is down,
+          because that is exactly when the user is dragging something into view
+          and wants to see what is there. `pointer-events-none` goes with the
+          fade so a nearly invisible button cannot swallow a tap meant for the
+          port behind it; both come back the moment the finger lifts.
+        */}
+        <div
+          className={`absolute right-3 bottom-3 flex flex-col gap-2 transition-opacity duration-200 ${
+            touching ? "pointer-events-none opacity-20" : "opacity-100"
+          }`}
+        >
           <Button
             onClick={() => zoomTo(scale * 1.5)}
             ariaLabel="Zoom in"
@@ -848,9 +965,6 @@ export function PortMap({
             className="w-12 px-0"
           >
             −
-          </Button>
-          <Button onClick={reset} ariaLabel="Reset the view" className="w-12 px-0">
-            ⟲
           </Button>
         </div>
       </div>
@@ -891,9 +1005,13 @@ export function PortMap({
             </Button>
           </div>
         ) : (
-          <p className="py-2 text-sm text-slate-400">
-            Tap a port to see it here. A numbered circle means several ports are
-            too close to tap apart — tap it to zoom in.
+          // One line, not two: the header subtitle already says "tap a port,
+          // then confirm", so this only needs to add the one thing it doesn't
+          // — what a numbered circle means. A phone measured at 430x740 lost
+          // 26% of the dialog's height to header+footer chrome before this;
+          // every line here is height the map itself does not get.
+          <p className="py-1.5 text-sm text-slate-400">
+            A numbered circle means ports too close to tap apart — tap it to zoom in.
           </p>
         )}
         <MapLegend />
@@ -902,18 +1020,27 @@ export function PortMap({
   );
 }
 
+/**
+ * A single row that scrolls sideways rather than wrapping.
+ *
+ * It used to wrap to two lines at phone width, which combined with the
+ * placeholder text above it to eat a quarter of the map dialog's height
+ * (measured: 194 of 740px on a 430-wide viewport) before the map itself got
+ * any of it. Icon-only entries plus a horizontal scroll keep it to one line
+ * without dropping any of the five bands.
+ */
 function MapLegend() {
   const entries = [
-    { level: "fresh", icon: "✓", label: "Under 1 hour" },
-    { level: "aging", icon: "◷", label: "1–6 hours" },
-    { level: "stale", icon: "⚠", label: "6–24 hours" },
-    { level: "wrong", icon: "!", label: "Over a day" },
-    { level: "none", icon: "○", label: "Never recorded" },
+    { level: "fresh", icon: "✓", label: "Fresh" },
+    { level: "aging", icon: "◷", label: "Aging" },
+    { level: "stale", icon: "⚠", label: "Stale" },
+    { level: "wrong", icon: "!", label: "Old" },
+    { level: "none", icon: "○", label: "None" },
   ] as const;
   return (
-    <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+    <ul className="mt-1.5 flex gap-x-2.5 overflow-x-auto text-xs whitespace-nowrap text-slate-500">
       {entries.map((entry) => (
-        <li key={entry.level} className="flex items-center gap-1">
+        <li key={entry.level} className="flex shrink-0 items-center gap-1">
           <span
             aria-hidden="true"
             className={`size-2 rounded-full ${FRESHNESS_CLASS[entry.level].dot}`}

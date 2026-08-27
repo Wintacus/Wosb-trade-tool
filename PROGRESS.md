@@ -1,6 +1,6 @@
 # PROGRESS
 
-Last updated: 2026-08-24 — Phase 2 complete (session 2). Phase 3 is next.
+Last updated: 2026-08-26 — Phase 3 manual entry built (session 3). OCR deferred by decision.
 
 Keep this file short. It is loaded into every session and then replayed on every request
 inside that session, so narrative history here is paid for hundreds of times. Record what
@@ -114,6 +114,30 @@ fitted view where only ~20px of slack exists, dragging from a marker the zoom ha
 off screen, and demanding an offset of exactly zero when the real requirement is that no
 port is parked outside. Verify a failure against the app before believing it.
 
+**A fifth real bug, found on a real iPhone after 28/28 was green (2026-08-26):**
+zooming in and panning toward an edge left a port's marker permanently cut in half.
+`clampAxis` let a port's own coordinate reach exactly x=0 or x=viewport — the pixel
+where the map STOPS — and the marker's constant-radius dot draws half outside the
+viewBox at that exact spot, with no further pan able to fix it since that IS the clamp's
+limit. Every existing reachability check asserted only the raw coordinate was in
+`[0, viewport]`; none rendered the marker, which has real width. Fixed with a constant
+`EDGE_MARGIN` (= `HIT_RADIUS`, 22px) the clamp always leaves between a boundary port and
+the true edge — `src/ui/PortMap.tsx`'s `clampAxis`/`clampOffset`. Pinned by a new
+touch-test check, **29/29 passing**. Reproduced in headless Chromium at zoom as low as
+2x; no iOS-only gesture needed, so this was a real, verifiable geometry bug, not the
+untestable Safari-gesture gap. Checked and found no issue: the header/footer already pad
+for `env(safe-area-inset-top/bottom)` and the map surface is measured after layout via
+`getBoundingClientRect()`, so it should already exclude notch/home-indicator space.
+**Unchecked gap:** no `safe-area-inset-left/right` padding anywhere in the map — only
+matters in landscape on a notched phone, and this Chromium harness cannot simulate a
+non-zero safe-area inset to verify it either way.
+
+Also fixed in `scripts/touch-test.mjs` itself: this dev environment can have another
+process editing unrelated files in the same working tree while the touch harness runs,
+and Vite's file watcher then force-reloads the harness page mid-test, wiping
+`window.__probe` and crashing the script. `readMap` now re-installs the probe and
+retries on that specific failure — a test-harness robustness fix, not a map bug.
+
 **Still unrun:** `scripts/ui-test.mjs` and `app-harness.html` (results screen and ship
 presets) were written by a subagent that was cut off. Never executed, never reviewed.
 
@@ -127,6 +151,7 @@ the one check this session could not run.
 |---|---|---|---|---|
 | 1 — Phase 0 + 1 | 390 | 146.8M | 2.0% | 349,208 |
 | 2 — Phase 2 | 358 | 111.1M | 0.0% | 325,065 |
+| 3 — Phase 3 entry | 62 | 7.7M | 4.6% | 129,884 |
 
 Session 2 should have been four sessions. Median context per request by quarter ran
 **132k → 253k → 395k → 507k**; 223 of 613 requests ran above 400k and burned 107M
@@ -140,22 +165,168 @@ instead of 197M**. Two causes, both now rules in CLAUDE.md:
 2. **The session never ended.** End at every real boundary; it is free and it is the
    biggest lever there is.
 
+Session 3 cost 7.7M against session 2's 111.1M for comparable ground. What
+changed was not discipline about batching — that is still 4.6% — but **ending
+the session at the boundary and reading only what was needed**: SPEC section 7
+alone rather than the whole file, PROGRESS from the branch that was current,
+and no PR subscription. Peak context 181k against session 2's 507k.
+
 Run `npm run tokens` before this session ends and add its row above.
 
-## Next — Phase 3 (Data Entry)
+## Done — Phase 3 so far (Data Entry)
 
-**State of play before you start:** Phase 2 is complete and green on branch
-`claude/phase-2-6gqs8q`, with **PR #6 open and NOT merged**. `main` is still the Phase 0/1
-status page. Decide with the user whether to merge #6 first — Phase 3 should branch from
-whatever ends up being the base, not stack silently on an unmerged branch.
+Branch `claude/phase-3-kickoff-37dj1t`, from a **merged** `main` — PR #6 was merged
+2026-08-26, so `main` is now the product UI, not the status page.
 
-SPEC.md section 7. Build manual entry first — it is the
-guaranteed path and OCR is only an accelerator (CLAUDE.md rule 6). The results screen
-already has an "add data" button wired to `onAddData`, which currently just returns to
-the route picker and says outright that entry is not built yet; that is the seam to
-pick up.
+**421 tests passing** (390 from Phase 2).
+
+- `api/anon-session.ts` mints the invisible contributor account. The database
+  refuses a submission from a signed-out visitor (`for insert to authenticated
+  with check (submitted_by = auth.uid())`), so an identity is mandatory before
+  anything can be saved. Supabase's own `signInAnonymously()` would do it but is
+  off by default and needs a dashboard toggle, which would be a manual step for
+  the user — so the endpoint creates the user with the service role key instead,
+  and the browser signs itself in with the publishable key.
+- `src/lib/identity.ts` — credentials in this browser's local storage, one
+  in-flight attempt shared by concurrent callers, profile row created on first
+  save (nothing creates it automatically and `submitted_by` is a FK to it).
+- `src/data/submit.ts` — parses prices from the digits rather than multiplying a
+  float, blank stays unknown, typed zero is saved, out-of-band warns but saves.
+- `src/ui/PriceEntry.tsx` — port → 61 goods in two collapsible sections with a
+  search, buy/sell/stock per row, sticky save bar. Reachable from the header
+  everywhere and from the results screen's "add data" button.
+
+**Fields deliberately start empty.** Pre-filling turns Save into re-affirming
+sixty numbers nobody looked at, with a fresh timestamp — laundering a stale
+price into a fresh-looking one. The recorded value sits beside the field.
+
+## Next
+
+- **The compaction below then hid every good's NAME, and the check missed it
+  for an instructive reason.** The name shared a flex row with the "on record"
+  summary; the summary was `shrink-0` and wide ("buy 7.0 · sell 7.0 · stock not
+  shown" plus a badge), so the truncating name was squeezed to ~34px. The goods
+  list became a column of prices with nothing identifying them. **It passed
+  verification because `verify-ui.mjs` had `prices_current: []` — with nothing
+  on record, every row took the short "not recorded here" branch and the wide
+  one never rendered.** A fixture with no data only ever tests the empty state.
+  Fixed by giving the name its own line with `min-w-0`, and the fixture now
+  carries a full set of stale, half-demo prices at the port the sheet opens on.
+  New check `every good row shows its name` measures the rendered BOX, not the
+  text — a zero-width truncated element still has its text in the DOM. Proven
+  by restoring the broken version: it failed at 32–34px, passes at 238px.
+- **Entry sheet compacted 2026-08-26 — measured, not guessed.** Each good's row
+  was **202px** tall, exactly **2 fitted** a 430x740 phone, and the 20 trade
+  goods took **6.8 screens** of scrolling (all 61: 15.5). SPEC 7.1 asks this
+  screen to be fast on a phone and it was not. The height was pure repetition:
+  a "Never recorded here" badge sitting above an "On record: nothing yet" line
+  saying the same thing, "Sell you get"/"Stock if shown" labels spelled out on
+  all 61 rows, and one identical "shows a buy price? Add one" offer per row.
+  Now: badge carries freshness alone, "on record" shows only when something is,
+  labels are placeholders with `sr-only` text behind them, and the buy-price
+  offer is one section-level toggle instead of twenty. Result **92px rows, 4 on
+  screen, 3.8 screens** (all 61: 9.3), inputs still 44px. Pinned by `the entry
+  sheet stays quick to scroll` in verify-ui.mjs.
+- **DECIDED 2026-08-26: the "where do I sell my hold" redesign is BENCHED.**
+  User's call and a sound one — it needs real data to be worth anything or to
+  test, and it would add a second manual chore (entering your hold). Revisit
+  once there is data. **Do not start it without asking.**
+- **OCR is greenlit but NOT next.** User chose to polish and use manual entry
+  first, and confirmed they will set `ANTHROPIC_API_KEY` in Vercel with a spend
+  cap when we get there. Scope when it starts: **Market screen only** (the 20
+  trade goods), review screen mandatory, per SPEC 7.2's safeguards. The
+  `ocr_corrections` table already exists from Phase 1; no OCR code exists yet.
+- **Screen share (SPEC 7.3) is useless to this user — it is desktop only.** The
+  browser cannot capture another app on iOS. When they ask for "just turn on
+  screen sharing and autofill", the phone-viable answer is OCR from a
+  screenshot, not 7.3. Say so rather than building something they cannot run.
+- **Housekeeping:** `scripts/ui-test.mjs` (24KB), `app-harness.html` and
+  `src/app-harness.tsx` (8.5KB) were written by a subagent that was cut off,
+  and have never been run or reviewed. `scripts/verify-ui.mjs` now covers this
+  ground properly. Either harvest anything useful out of them or delete them —
+  never-run test code that claims to test is worse than none.
+
+- **THE bug, found 2026-08-26 after three wrong diagnoses: the app lost every
+  bit of in-flight work on a page reload.** Route, ship and every typed price
+  lived only in React state. iOS Safari discards a backgrounded tab whenever it
+  wants the memory — and this tool's entire workflow is switching to the game to
+  read a price and switching back. So the app appeared to reset itself at
+  random, which is exactly how the user described it three times ("it wipes
+  everything... and then it just resets again") while three rounds of fixes
+  were aimed at buttons instead. Fixed by `src/lib/session.ts`: step, ports,
+  ship and unsaved drafts persist to localStorage on every change and restore
+  on load, expiring after 12h so a stale route is not resumed the next day.
+  **No desktop browser ever discards a tab, so nothing but an explicit reload
+  could have caught this.** `scripts/verify-ui.mjs` now reloads.
+- **Verification is mechanical now, because writing it down failed twice.**
+  `npm run verify` drives the real app in real Chromium at phone size — the
+  four-step flow, a reload, the Add-prices path, typed prices surviving a
+  reload — and writes `.verified` with a hash of every source file's contents.
+  The `Stop` hook in `.claude/settings.json` refuses to end a turn where
+  `src/` or `api/` changed without a matching `.verified`, so "verified, then
+  one more tweak, then reported success" is now blocked rather than discouraged.
+  Add a check to that script for every new symptom found. CLAUDE.md hard rule 7
+  was rewritten from "verify before reporting" to "reproduce the user's symptom
+  before writing any fix", which is the step that was actually missing.
+- **A build stamp is in the footer** (`build <sha>`, from
+  `VERCEL_GIT_COMMIT_SHA`). Two rounds were lost to nobody being able to tell
+  whether the phone was showing new code, a cached bundle, or an unfinished
+  deploy. Ask the user to read it before debugging anything they report.
+- **CONFIRMED WORKING END TO END on a real phone, 2026-08-26.** The user
+  entered a price at Al-Khalif and saw "Saved 1 observation". That single
+  screenshot proves the whole chain the tests could not: `/api/anon-session`
+  minting a real Supabase user with the reserved `.invalid` email domain, the
+  browser signing in with it, the profile row being created, and the RLS
+  insert into `price_submissions` being accepted. **This was the biggest open
+  unknown in Phase 3 and it is closed.** The `.invalid` domain is fine; no
+  fallback to a real domain or to dashboard anonymous sign-in is needed.
+- **CONFIRMED IN GAME 2026-08-26:** the Market tab shows ONE number per trade
+  good and **you can only sell to the port** — there is no buy price for a
+  trade good, and the user believes they are acquired by looting. The route
+  planner's buy-here-sell-there model therefore can never recommend a trade
+  good; it works only on craft resources, which do have buy/sell pairs. The
+  entry screen no longer offers a Buy box on a trade good but keeps one
+  reachable per row. **Agreed with the user: redesign toward "I am holding
+  this, where do I sell it" — not started, and explicitly to be done step by
+  step after the current bugs are confirmed fixed live.**
+- **Map pan room, fixed 2026-08-26 (user-reported, third map round).** The
+  clamp stopped panning at edge-meets-edge, pinning the outermost port
+  EDGE_MARGIN px from the screen edge with no pan left to improve it — on
+  screen, but with its label running off and its marker under the zoom
+  controls. Measured before the fix: extremes stopped 161–320px from centre.
+  `clampAxis` now blends from the resting limits toward "either outermost port
+  can reach the middle of the screen", phased in by `panFreedom(scale)` — 0 at
+  the fitted view (so the map still sits still there; loosening it flat broke
+  the overscroll check immediately) and 1 by 2x zoom. **Two wrong turns worth
+  not repeating:** ramping on content span rather than zoom is aspect-ratio
+  dependent and left the vertical axis 24px short; and loosening only the
+  larger-than-screen branch missed that a tall phone letterboxes the map, so
+  the vertical axis is still "smaller than the screen" even at 2x. Both
+  branches now share one ramp. Pinned by a new check, `an edge port can be
+  panned near the middle of the screen`, which FAILED before the fix — and
+  which had to be rewritten to use `panToLimit` rather than `panToward`,
+  because panToward returns as soon as a port is merely on screen, the exact
+  inadequate bar the check exists to replace. 31/31 touch checks.
+- **Zoom controls no longer hide ports (2026-08-26).** Measured first: the
+  stack covered a 48x148px block of a 406x580px map (3%) and sat on top of
+  Port Bord Radel at the fitted view. Chosen by the user from three options:
+  ⟲ reset moved to the header beside ✕ (rare action, was holding prime
+  bottom-right space over the map), and the remaining +/− fade to opacity 0.2
+  with `pointer-events-none` while a finger is down, returning on lift — so
+  they are transparent exactly when something is being dragged into view, and
+  a faded button cannot swallow a tap meant for the port behind it. +/− stay
+  ON the map deliberately: they are the gesture-free path for anyone who
+  cannot pinch. Pinned by `the zoom controls fade while dragging and come back
+  after`. 32/32 touch checks.
+- OCR (SPEC 7.2) still deferred until manual entry has been used on a real port.
+- Port state entry (tax %, faction, port level) is NOT in Phase 3's scope.
 
 ## Decisions already made — do not re-litigate
+
+-1. **Phase 3, decided by the user on 2026-08-26:** merge PR #6 before branching;
+   a silent anonymous account rather than an email sign-in or an open write
+   policy; entry covers trade goods AND craft resources but not port state; OCR
+   waits until manual entry has been used on a real port.
 
 0. **Phase 2 UI, decided by the user on 2026-08-24:** ship presets live in this
    browser's storage only (no silent account, nothing to switch on in Supabase);
