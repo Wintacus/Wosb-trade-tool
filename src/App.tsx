@@ -75,7 +75,18 @@ function toStoredDrafts(rows: Record<string, DraftRow>): Record<string, SessionD
   return Object.fromEntries(
     Object.entries(rows).map(([goodId, row]) => [
       goodId,
-      { buyText: row.buyText, sellText: row.sellText, stockText: row.stockText },
+      {
+        buyText: row.buyText,
+        sellText: row.sellText,
+        stockText: row.stockText,
+        // Listing the fields explicitly is what keeps a stray key out of
+        // storage -- but it also silently dropped what a screenshot had read,
+        // on the very first round trip through here. The values stayed, so it
+        // looked fine; what vanished was any record that a machine had put
+        // them there, which is both the "read" marker on screen and the whole
+        // of the correction log. Caught by the browser check, not by a type.
+        ...(row.ocr ? { ocr: { ...row.ocr } } : {}),
+      },
     ]),
   );
 }
