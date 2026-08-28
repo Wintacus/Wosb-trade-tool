@@ -290,6 +290,7 @@ Never leave the repo in a half-broken state to squeeze in one more change.
 | `data/ships.json` | 38 ships with verified stats, plus upgrade modifiers |
 | `data/goods.json` | 20 trade goods with weights and validation evidence |
 | `data/resources.json` | 26 craft materials, 15 special items, crafting recipes |
+| `fixtures/ocr/README.md` | How to add a screenshot + ground-truth pair for `npm run ocr:accuracy` |
 | `PROGRESS.md` | Session handover notes — **read first, update as you go** |
 | `DESIGN_BRIEF.md` | Art direction for Claude Design (not needed for V1 build) |
 
