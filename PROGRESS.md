@@ -40,17 +40,7 @@ checks (`npm run verify`), **32/32** touch checks (`node scripts/touch-test.mjs`
    images directly — and it becomes `fixtures/ocr/<name>.png` plus a hand-written
    `.expected.json`, after which `npm run ocr:accuracy` gives a real number.
 
-2. **SECURITY — `/api/anon-session` has no effective rate limit.** The in-memory limiter
-   is per warm instance, so retrying until a cold instance answers defeats it;
-   `X-Forwarded-For` is client-supplied, so the key it limits on is chosen by the caller;
-   and there is no origin check. **One attacker can mint unlimited accounts, which means
-   unlimited "voters" — that invalidates Phase 4's consensus weighting before it is
-   built,** and costs Supabase MAU meanwhile. The fix is the pattern already proven in
-   `migrations/0003_ocr_usage.sql`: an atomic Postgres counter, keyed on
-   `x-vercel-forwarded-for` (platform-set, unlike `X-Forwarded-For`). **Decide this before
-   building any Phase 4 moderation on top of it.**
-
-3. **`ANTHROPIC_API_KEY` — RESOLVED 2026-08-27.** Confirmed set:
+2. **`ANTHROPIC_API_KEY` — RESOLVED 2026-08-27.** Confirmed set:
    `GET https://wosb-trade-tool.vercel.app/api/ocr` → `{"ready":true,"missing":[]}`.
    That URL is how any session re-checks it; no dashboard, no asking anyone.
 
@@ -108,6 +98,36 @@ checks (`npm run verify`), **32/32** touch checks (`node scripts/touch-test.mjs`
   exits 0 until a fixture exists.
 
 ---
+
+## Account creation is rate limited (fixed 2026-08-28)
+
+`/api/anon-session` is unauthenticated by definition — its whole job is handing an
+identity to someone who has none — and its only protection was an in-memory counter that
+failed two ways at once. Serverless instances do not share memory, so retrying until a
+cold instance answered defeated it; and it counted against `X-Forwarded-For`, an ordinary
+request header **the caller writes**, so varying it per request made the limit vanish
+without even needing a new instance. Every account is a vote in Phase 4's consensus
+weighting, so unlimited accounts meant unlimited votes.
+
+- `migrations/0004_anon_session_limits.sql` — `anon_session_charge()`, the same atomic
+  Postgres counter proven by `ocr_charge()` in 0003. 10/hour, 50/day. A refused attempt
+  still counts. RLS-denied and `service_role`-only.
+- `callerAddress()` reads **`x-vercel-forwarded-for`** (written by the platform, which
+  overwrites whatever arrived) or `x-real-ip`. It deliberately does **not** fall back to
+  `x-forwarded-for`: a value the attacker picks is not an identity, and falling back
+  restores the hole exactly when it matters.
+- The table stores `subjectFor()` — an **HMAC** of the address keyed with a server-only
+  secret, never the address. A bare SHA-256 of an IPv4 address is minutes of brute force.
+- **Fails closed.** If the counter cannot be reached, no account is created. A 404 means
+  migration 0004 has not applied, which cannot normally happen because migrations run in
+  the same build that ships the code — but if it ever does, **new sign-ups stop until it
+  is fixed.** That is the deliberate trade: a silently reopened hole is worse.
+- Limits are generous because of carrier-grade NAT: a whole mobile network can share one
+  address, and refusing an honest contributor is the worse failure. A real person needs
+  exactly one account, ever.
+
+**Still open, by design:** there is no origin check. It would only stop other websites'
+browsers, not a script, which is the actual threat — the rate limit is the real control.
 
 ## What the next session must know
 

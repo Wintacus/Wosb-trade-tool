@@ -210,19 +210,54 @@ describe('the account-minting endpoint survives real Node ESM', () => {
     expect(parsed.error.length).toBeGreaterThan(0);
   }, 120_000);
 
-  test('a burst from one caller is throttled', () => {
+  test('the rate limit keys on the platform header, never the caller\'s', () => {
+    // THE BUG THIS PINS. The old limiter counted against `x-forwarded-for`,
+    // which is an ordinary request header the caller writes. Varying it per
+    // request made the limit vanish -- no new serverless instance needed, no
+    // cleverness at all. `x-vercel-forwarded-for` is written by the platform
+    // and overwrites whatever arrived, so it is the only one that means
+    // anything. A caller-supplied value must NOT be a fallback either: falling
+    // back to it restores the hole in exactly the case where the limit matters.
     const output = buildAndRun(`
       const m = await import('${OUT}/anon-session.js');
-      const results = [];
-      for (let i = 0; i < 8; i++) results.push(m.rateLimited('1.2.3.4'));
-      // A different caller is unaffected by the first one's burst.
-      results.push(m.rateLimited('5.6.7.8'));
-      console.log(JSON.stringify(results));
+      console.log(JSON.stringify({
+        platformWins: m.callerAddress({
+          'x-vercel-forwarded-for': '203.0.113.7',
+          'x-forwarded-for': 'i-choose-this',
+        }),
+        callerHeaderIgnored: m.callerAddress({ 'x-forwarded-for': 'i-choose-this' }),
+        realIp: m.callerAddress({ 'x-real-ip': '198.51.100.4' }),
+        nothing: m.callerAddress({}),
+        firstOfList: m.callerAddress({ 'x-vercel-forwarded-for': '203.0.113.7, 10.0.0.1' }),
+      }));
     `);
-    const results = JSON.parse(output.trim().split('\n').pop()!) as boolean[];
-    expect(results.slice(0, 5)).toEqual([false, false, false, false, false]);
-    expect(results.slice(5, 8)).toEqual([true, true, true]);
-    expect(results[8]).toBe(false);
+    const r = JSON.parse(output.trim().split('\n').pop()!);
+    expect(r.platformWins).toBe('203.0.113.7');
+    expect(r.callerHeaderIgnored).toBe('unattributed');
+    expect(r.realIp).toBe('198.51.100.4');
+    expect(r.nothing).toBe('unattributed');
+    expect(r.firstOfList).toBe('203.0.113.7');
+  }, 120_000);
+
+  test('the stored subject is a keyed hash, not an address', () => {
+    // A bare SHA-256 of an IPv4 address is reversible: four billion values is
+    // minutes of work. Keying it with a server-only secret means the table can
+    // count without being able to say who.
+    const output = buildAndRun(`
+      const m = await import('${OUT}/anon-session.js');
+      console.log(JSON.stringify({
+        a: m.subjectFor('203.0.113.7', 'secret-one'),
+        again: m.subjectFor('203.0.113.7', 'secret-one'),
+        otherSecret: m.subjectFor('203.0.113.7', 'secret-two'),
+        otherAddress: m.subjectFor('203.0.113.8', 'secret-one'),
+      }));
+    `);
+    const r = JSON.parse(output.trim().split('\n').pop()!);
+    expect(r.a).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.again).toBe(r.a);            // same input, same bucket
+    expect(r.otherSecret).not.toBe(r.a);  // actually keyed
+    expect(r.otherAddress).not.toBe(r.a);
+    expect(r.a).not.toContain('203.0.113.7');
   }, 120_000);
 });
 
