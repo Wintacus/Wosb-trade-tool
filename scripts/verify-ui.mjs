@@ -659,14 +659,16 @@ if (failed.length > 0) {
 
 // The stamp the Stop hook reads. It records WHICH working tree was verified,
 // so editing a file afterwards invalidates it rather than silently passing.
-// The CONTENT of every source file. `git status` would only capture which
-// files are dirty, so editing an already-dirty file would not invalidate this
-// stamp -- and "verify, then one more tweak, then report success" is exactly
-// the hole this is here to close.
-const treeHash = execSync(
-  "find src api -type f \\( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \\) -print0 2>/dev/null | sort -z | xargs -0 sha1sum 2>/dev/null | sha1sum | awk '{print $1}'",
-  { encoding: 'utf8', shell: '/bin/bash' },
-).trim();
+// It hashes the CONTENT of every watched file: `git status` would only capture
+// which files are dirty, so editing an already-dirty file would not invalidate
+// this stamp -- and "verify, then one more tweak, then report success" is
+// exactly the hole this is here to close.
+//
+// Computed by the same module the hook calls, deliberately. Two copies of a
+// hashing pipeline that drift apart leave the gate passing while checking
+// something other than what it claims -- a silent failure in the one mechanism
+// whose entire job is to prevent silent failures.
+const treeHash = (await import('./tree-hash.mjs')).treeHash();
 writeFileSync(
   '.verified',
   JSON.stringify(

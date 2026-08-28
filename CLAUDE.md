@@ -6,7 +6,15 @@ Read this before doing anything in this repo.
 
 ## The person you're working with
 
-- **Develops entirely from a phone.** No local dev environment, no terminal, no `npm run dev`. Never tell them to run something locally.
+- **Works from a phone almost always.** There is a Windows PC with Claude Code on it, but
+  they rarely have access to it at the moment a question comes up. So treat a local run as
+  a fallback that exists, not a step you may plan around: never make progress depend on
+  them being at the PC, and never answer "run this locally" to something you could do
+  yourself. (This line used to say they had no computer at all. That was true for the
+  first four sessions and it ruled out whole classes of solution without checking — which
+  is why it is written as "rarely available" rather than "unavailable".)
+- **The product is phone-first regardless.** The app is used on a phone, standing in a
+  port, switching to the game and back. Verify at phone viewport, and reload the page.
 - **Verifies work at a live URL.** Every change must be pushed and auto-deployed to Vercel. If it isn't visible at the deployed URL, it doesn't exist.
 - **Wants plain language.** Define technical terms the first time they appear — RLS, upsert, knapsack, EXIF, whatever. Don't assume familiarity, don't over-explain twice.
 - **Wants honesty over agreeableness.** If an approach is wrong, say so directly. Flag concerns rather than quietly working around them. Never present a guess with confidence — if you're unsure, say you're unsure.
@@ -51,6 +59,13 @@ answer — it is the problem to solve. Before handing over any step, exhaust the
 alternatives: build a serverless endpoint, write a script, automate it, restructure
 so the step disappears. Manual steps for the user are a last resort, and each one
 needs a reason why automation was genuinely impossible, not merely more work.
+
+**Before asking the user for a fact, check whether a connector or an endpoint can
+answer it.** Measured 2026-08-27: "is `ANTHROPIC_API_KEY` set in Vercel?" was reported
+to the user as something only they could check. It was not — merging to `main` put
+`GET /api/ocr` on the public production URL, and one call answered it. A question that
+*looks* like it needs a human is the exact case worth one call to disprove. The general
+form: if the answer lives in a system, go and read it; only a judgement lives with them.
 
 When a one-time setup unavoidably needs a human — a secret only they can see, a
 console only they can log into — make it **one action, once**, and make every future
@@ -105,10 +120,32 @@ So the order is not negotiable:
 - **If you cannot reproduce it, say so and ask for one more detail.** Do not fix on a theory. A fix aimed at an unreproduced symptom is a guess wearing a lab coat, and it costs a full round-trip every time.
 - **Then fix it, then show the same reproduction now passes.** The before and the after must be the same test.
 - **Match the user's real conditions, not convenient ones.** Phone viewport, not desktop. Reload the page — they switch apps constantly. Slow network, empty database, a port with no data. Most bugs here have lived in conditions the sandbox does not reach by default.
+- **A fixture with no data only ever tests the empty state.** This is not a nicety; it is
+  how a *verified* build shipped with every good's name invisible. `verify-ui.mjs` had
+  `prices_current: []`, so every row rendered the short "not recorded here" branch and the
+  wide populated row — the only one that breaks — was never drawn at all. The check passed
+  because the bug could not appear. **A fixture must carry the widest shape the UI can
+  take**: every field present, the longest strings, the extra badge, the second line. The
+  empty state is one case, not the case.
 - A subagent reporting "verified, 427 tests pass" means it checked its own work, not that you have. Re-read its diff and re-run the check yourself before relaying its claim as fact.
 - If you truly cannot check, say exactly that — "I could not verify this, here's why" — and never dress it up as done.
 
-**This is enforced mechanically, not on trust.** `npm run verify` drives the real app in a real browser (including a reload) and writes `.verified`. The `Stop` hook in `.claude/settings.json` refuses to end a turn where `src/` or `api/` changed without a matching, current `.verified`. It hashes file contents, so "verify, then one more tweak" invalidates it. Do not weaken or bypass that hook; add checks to `scripts/verify-ui.mjs` as new symptoms are found, so each one stays fixed.
+**This is enforced mechanically, not on trust.** `npm run verify` drives the real app in a real browser (including a reload) and writes `.verified`. The `Stop` hook in `.claude/settings.json` refuses to end a turn where the watched tree changed without a matching, current `.verified`. It hashes file contents, so "verify, then one more tweak" invalidates it. Do not weaken or bypass that hook; add checks to `scripts/verify-ui.mjs` as new symptoms are found, so each one stays fixed.
+
+**What the gate watches:** `src/`, `api/`, `supabase/` and `scripts/`. The last two were
+added on 2026-08-27 after finding they were outside it — which meant a database migration,
+the single highest-risk change in this project because it runs against the real database
+on deploy, could ship without the app ever being driven. Including `scripts/` also means
+editing the verification harness itself invalidates the stamp, which is correct: a changed
+harness has not been run. One command computes the hash (`node scripts/tree-hash.mjs`) and
+both the hook and `verify-ui.mjs` call it, so the two can never drift apart and silently
+stop agreeing on what was checked.
+
+**When a written rule keeps failing, make it a hook.** That has now worked twice here —
+verification, and the every-15% status report — and both times only *after* the written
+version had failed at least twice. A rule the model must remember to follow is advice; a
+gate that runs whether it wants to or not is a rule. If you notice a third instruction
+being forgotten repeatedly, do not restate it more forcefully. Mechanise it.
 
 ---
 
@@ -137,7 +174,13 @@ So the order is not negotiable:
 
 The first session of this project spent 146.8 million tokens. **95.6% of that was re-reading conversation already sent** — the API keeps no memory, so every tool call re-sends the entire conversation. Cost is therefore *requests × context size*, and both grow all session. These are measured rules, not preferences.
 
-- **Batch independent tool calls into one message.** This is the single biggest lever and it belongs to Claude, not the user. Each extra round trip replays the whole conversation again — about 350,000 tokens per trip at mid-session. The first session batched **1.8%** of its 386 calls and paid full freight for the rest.
+- **Write one compound shell command instead of several.** This is the concrete form of
+  "batch", and it is the version that actually works. `cat a b c` in one call, not three
+  Reads. `cmd1 && cmd2 && cmd3` with `echo` separators, not three Bash calls. Search and
+  read in the same call. The abstract instruction to "batch independent tool calls" has
+  been in this file since session 1 and measured 1.8%, 0.0%, 0.0% and 4.6% — so state the
+  technique, not the goal. Each extra round trip replays the whole conversation: about
+  350,000 tokens at mid-session.
 - **Start a fresh session at each phase boundary.** A new session begins near 50,000 tokens of context; the first one ended at 774,000, so identical work cost several times more by the end. `PROGRESS.md` plus this file are the handover and they are sufficient. Never begin a phase in the session that finished the previous one.
 - **Read the part of `SPEC.md` you need, never the whole file.** It is ~7,900 tokens. Once read it is replayed on every following request for the rest of the session.
 - **Run the tests you affected. Run all of them once, before pushing.** A full-suite re-run after each small edit costs a round trip and puts a screenful of output into the context permanently.
@@ -161,6 +204,15 @@ already reported. CI was never once red. Each wake replays the whole conversatio
 - To check CI, use `pull_request_read` with `get_check_runs`. Never `get` — that returns
   the entire PR body, several thousand tokens, and it stays in context for the rest of
   the session.
+- **To check a deploy, use the Vercel connector — once, on demand.** It serves the same
+  goal as the two rules above by a better route: `list_deployments` for build state,
+  `get_deployment_build_logs` for a failure, `get_runtime_logs` for a function error, and
+  `web_fetch_vercel_url` to fetch **production** (previews sit behind Vercel
+  Authentication and 302 to a login). None of it wakes the session, so it replaces polling
+  entirely — but it is still one call when a status matters, never a loop.
+  `list_deployments` returns a large payload; ask for it once and read it carefully rather
+  than twice. There is no environment-variable tool: `GET /api/ocr` on production is how a
+  session learns whether the API key is set.
 
 ## Cost is requests x context, and context only grows
 
@@ -173,8 +225,9 @@ instead of 197M**.
   new problem. This is the single biggest lever and it is free. The session that
   measured the numbers above did Phase 2, three rounds of map rebuilding and a test
   harness in one sitting; it should have been four sessions.
-- **Batch independent tool calls into one message.** Measured batching rate: 0.0%,
-  twice. 213 separate Bash calls in one session, each paying a full replay.
+- **One compound shell command, not several.** See the technique above. Measured
+  batching rate: 0.0% twice, then 4.6%. 213 separate Bash calls in one session, each
+  paying a full replay.
 - **Two strikes on a failing command.** If the same command fails twice, stop running
   variations of it and spend one call instrumenting instead. Fifteen near-identical
   failed runs went into a problem whose cause was a single word in the command.
