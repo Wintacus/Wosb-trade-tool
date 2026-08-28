@@ -10,8 +10,8 @@
 # model may or may not follow; a hook is a gate that runs whether it wants to
 # or not. Three failures of the honour system is enough.
 #
-# 1. VERIFICATION. If the working tree has changes under src/ or api/, then
-#    .verified must exist and record the same tree state. `npm run verify`
+# 1. VERIFICATION. If the working tree has changes under src/, api/, supabase/
+#    or scripts/, then .verified must exist and record the same tree state. `npm run verify`
 #    writes it after driving the real app in a real browser, so a stale or
 #    missing stamp means the running app was never actually looked at. Editing
 #    a file after verifying changes the hash and invalidates the stamp, which
@@ -28,17 +28,35 @@ set -uo pipefail
 cd "$CLAUDE_PROJECT_DIR" 2>/dev/null || exit 0
 
 # --- 1. the app must have been driven since it was last changed -------------
-CHANGES="$(git status --porcelain=v1 -- src api 2>/dev/null)"
+#
+# WHAT IS WATCHED: src, api, supabase, scripts. The last two were added
+# 2026-08-27 after noticing they sat outside the gate -- which meant a database
+# migration, the riskiest change in this project because it runs against the
+# real database during the deploy, could ship without the app being driven
+# once. Watching scripts/ also means editing the harness invalidates the stamp,
+# which is right: a changed harness has not been run.
+CHANGES="$(git status --porcelain=v1 -- src api supabase scripts 2>/dev/null)"
 
 if [ -n "$CHANGES" ]; then
-  # Hash the CONTENT of every source file, not `git status` output. Status only
+  # Hash the CONTENT of every watched file, not `git status` output. Status only
   # lists filenames and flags, so editing an already-modified file leaves it
   # identical -- which would let a post-verification edit slip through.
-  CURRENT="$(find src api -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.css' \) -print0 2>/dev/null | sort -z | xargs -0 sha1sum 2>/dev/null | sha1sum | awk '{print $1}')"
+  #
+  # ONE command computes this, shared with scripts/verify-ui.mjs. When the hook
+  # and the harness each had their own copy of a find|sha1sum pipeline, any
+  # drift between them would leave the gate passing while checking something
+  # else entirely -- a silent failure of the thing whose whole job is to stop
+  # silent failures.
+  CURRENT="$(node scripts/tree-hash.mjs 2>/dev/null)"
+
+  if [ -z "$CURRENT" ]; then
+    echo "BLOCKED: could not compute the source hash (node scripts/tree-hash.mjs failed)." >&2
+    exit 2
+  fi
 
   if [ ! -f .verified ]; then
     cat >&2 <<'EOF'
-BLOCKED: src/ or api/ changed but the app was never driven.
+BLOCKED: watched source changed but the app was never driven.
 
 Run:  npm run verify
 
@@ -57,7 +75,7 @@ EOF
 
   if [ "$RECORDED" != "$CURRENT" ]; then
     cat >&2 <<'EOF'
-BLOCKED: src/ or api/ changed since the last verification run.
+BLOCKED: watched source changed since the last verification run.
 
 .verified was written against a different working tree, so it says nothing
 about the code as it stands now.

@@ -10,4 +10,5 @@ export const expectedMigrations: string[] = [
   '0001_value_constraints.sql',
   '0002_trust_boundaries.sql',
   '0003_ocr_usage.sql',
+  '0004_anon_session_limits.sql',
 ];
